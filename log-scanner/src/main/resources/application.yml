@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: log-scanner
+  profiles:
+    active: local
+
+  batch:
+    job:
+      enabled: false
+
+management:
+  health:
+    db:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
