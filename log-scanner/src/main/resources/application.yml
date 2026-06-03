@@ -8,6 +8,15 @@ spring:
     job:
       enabled: false
 
+batch:
+  redo-log-print:
+    enabled: ${REDO_LOG_PRINT_BATCH_ENABLED:true}
+    max-rows: ${REDO_LOG_PRINT_BATCH_MAX_ROWS:100}
+
+logminer:
+  starter:
+    enabled: ${LOGMINER_STARTER_ENABLED:false}
+
 management:
   health:
     db:

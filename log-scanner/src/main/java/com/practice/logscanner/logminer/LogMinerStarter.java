@@ -29,7 +29,7 @@ public class LogMinerStarter implements ApplicationRunner, DisposableBean {
 	private boolean started;
 
 	public LogMinerStarter(
-			@Value("${logminer.enabled:true}") boolean enabled,
+			@Value("${logminer.starter.enabled:false}") boolean enabled,
 			DataSource dataSource) {
 		this.enabled = enabled;
 		this.dataSource = dataSource;
