@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,6 +18,7 @@ import org.springframework.batch.infrastructure.item.ItemStreamException;
 import com.practice.logscanner.batch.model.RedoLogEntry;
 import com.practice.logscanner.logminer.LogMinerCheckpointRepository;
 import com.practice.logscanner.logminer.LogMinerConnectionFactory;
+import com.practice.logscanner.logminer.RedoLogFileRegistrar;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -33,6 +33,7 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 
 	private final LogMinerConnectionFactory logMinerConnectionFactory;
 	private final LogMinerCheckpointRepository checkpointRepository;
+	private final RedoLogFileRegistrar redoLogFileRegistrar;
 	private final List<String> targetTables;
 	private final MeterRegistry meterRegistry;
 
@@ -47,10 +48,12 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 	public RedoLogItemReader(
 			LogMinerConnectionFactory logMinerConnectionFactory,
 			LogMinerCheckpointRepository checkpointRepository,
+			RedoLogFileRegistrar redoLogFileRegistrar,
 			List<String> targetTables,
 			MeterRegistry meterRegistry) {
 		this.logMinerConnectionFactory = logMinerConnectionFactory;
 		this.checkpointRepository = checkpointRepository;
+		this.redoLogFileRegistrar = redoLogFileRegistrar;
 		this.targetTables = targetTables;
 		this.meterRegistry = meterRegistry;
 	}
@@ -72,14 +75,17 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 				return;
 			}
 
-			List<String> redoLogFiles = findRedoLogFiles(connection);
-			registerRedoLogFiles(connection, redoLogFiles);
+			List<String> redoLogFiles = redoLogFileRegistrar.registerAll(connection);
 			startLogMiner(connection, startScn, endScn);
 			contentStatement = prepareContentStatement(connection);
 			contentResultSet = contentStatement.executeQuery();
 			startTime = LocalDateTime.now();
 
-			log.debug("[REDO-LOG-PRINT][READER][OPEN] startScn={}, endScn={}, targets={}", startScn, endScn, targetTables);
+			log.debug("[REDO-LOG-PRINT][READER][OPEN] startScn={}, endScn={}, targets={}, registeredRedoLogCount={}",
+					startScn,
+					endScn,
+					targetTables,
+					redoLogFiles.size());
 		}
 		catch (SQLException ex) {
 			close();
@@ -102,6 +108,7 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 				contentResultSet.getString("seg_owner"),
 				contentResultSet.getString("table_name"),
 				contentResultSet.getString("username"),
+				contentResultSet.getString("row_id"),
 				contentResultSet.getString("sql_redo"));
 	}
 
@@ -153,50 +160,6 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 		}
 	}
 
-	private List<String> findRedoLogFiles(Connection connection) throws SQLException {
-		List<String> files = new ArrayList<>();
-		try (Statement statement = connection.createStatement();
-				ResultSet resultSet = statement.executeQuery("""
-						SELECT member
-						FROM sys.v_$logfile
-						ORDER BY group#, member
-						""")) {
-			while (resultSet.next()) {
-				files.add(resultSet.getString("member"));
-			}
-		}
-
-		if (files.isEmpty()) {
-			throw new IllegalStateException("No Oracle redo log files were found.");
-		}
-
-		log.info("[REDO-LOG-PRINT][READER] Redo log files found. files={}", files);
-		return files;
-	}
-
-	private void registerRedoLogFiles(Connection connection, List<String> redoLogFiles) throws SQLException {
-		for (int i = 0; i < redoLogFiles.size(); i++) {
-			String option = i == 0 ? "DBMS_LOGMNR.NEW" : "DBMS_LOGMNR.ADDFILE";
-			registerRedoLogFile(connection, redoLogFiles.get(i), option);
-		}
-	}
-
-	private void registerRedoLogFile(Connection connection, String fileName, String option) throws SQLException {
-		String sql = """
-				BEGIN
-				  DBMS_LOGMNR.ADD_LOGFILE(
-				    LOGFILENAME => ?,
-				    OPTIONS => %s
-				  );
-				END;
-				""".formatted(option);
-
-		try (PreparedStatement statement = connection.prepareStatement(sql)) {
-			statement.setString(1, fileName);
-			statement.execute();
-		}
-	}
-
 	private void startLogMiner(Connection connection, long startScn, long endScn) throws SQLException {
 		try (Statement statement = connection.createStatement()) {
 			statement.execute("""
@@ -219,7 +182,7 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 				.collect(Collectors.joining(", "));
 
 		String sql = """
-				SELECT scn, timestamp, operation, seg_owner, table_name, username, sql_redo
+				SELECT scn, timestamp, operation, seg_owner, table_name, username, row_id, sql_redo
 				FROM v$logmnr_contents
 				WHERE operation IN ('INSERT', 'UPDATE', 'DELETE')
 				AND table_name IN (%s)

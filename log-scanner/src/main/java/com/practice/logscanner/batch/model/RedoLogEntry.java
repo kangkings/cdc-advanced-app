@@ -10,5 +10,6 @@ public record RedoLogEntry(
 		String owner,
 		String tableName,
 		String username,
+		String rowId,
 		String sqlRedo) {
 }

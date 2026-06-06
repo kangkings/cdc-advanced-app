@@ -19,6 +19,10 @@ logminer:
   targets:
     - P_USERS
 
+cdc:
+  kafka:
+    topic: ${CDC_KAFKA_TOPIC:cdc-log-entries}
+
 management:
   health:
     db:

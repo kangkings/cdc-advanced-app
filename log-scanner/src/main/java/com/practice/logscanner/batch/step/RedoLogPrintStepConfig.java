@@ -17,6 +17,7 @@ import com.practice.logscanner.batch.writer.RedoLogItemWriter;
 import com.practice.logscanner.logminer.LogMinerCheckpointRepository;
 import com.practice.logscanner.logminer.LogMinerConnectionFactory;
 import com.practice.logscanner.logminer.LogMinerTargetProperties;
+import com.practice.logscanner.logminer.RedoLogFileRegistrar;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -47,11 +48,13 @@ public class RedoLogPrintStepConfig {
 	public RedoLogItemReader redoLogItemReader(
 			LogMinerConnectionFactory logMinerConnectionFactory,
 			LogMinerCheckpointRepository checkpointRepository,
+			RedoLogFileRegistrar redoLogFileRegistrar,
 			LogMinerTargetProperties logMinerTargetProperties,
 			MeterRegistry meterRegistry) {
 		return new RedoLogItemReader(
 				logMinerConnectionFactory,
 				checkpointRepository,
+				redoLogFileRegistrar,
 				logMinerTargetProperties.targets(),
 				meterRegistry);
 	}
