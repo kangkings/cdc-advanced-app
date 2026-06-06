@@ -6,6 +6,10 @@ spring:
   profiles:
     active: local
 
+cdc:
+  kafka:
+    input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-transform-events}
+
 management:
   endpoints:
     web:
