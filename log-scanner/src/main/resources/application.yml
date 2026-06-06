@@ -16,6 +16,8 @@ batch:
 logminer:
   starter:
     enabled: ${LOGMINER_STARTER_ENABLED:false}
+  targets:
+    - P_USERS
 
 management:
   health:

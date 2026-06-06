@@ -8,8 +8,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.sql.DataSource;
-
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -23,16 +21,16 @@ import lombok.extern.slf4j.Slf4j;
 public class LogMinerStarter implements ApplicationRunner, DisposableBean {
 
 	private final boolean enabled;
-	private final DataSource dataSource;
+	private final LogMinerConnectionFactory logMinerConnectionFactory;
 
 	private Connection connection;
 	private boolean started;
 
 	public LogMinerStarter(
 			@Value("${logminer.starter.enabled:false}") boolean enabled,
-			DataSource dataSource) {
+			LogMinerConnectionFactory logMinerConnectionFactory) {
 		this.enabled = enabled;
-		this.dataSource = dataSource;
+		this.logMinerConnectionFactory = logMinerConnectionFactory;
 	}
 
 	@Override
@@ -42,7 +40,7 @@ public class LogMinerStarter implements ApplicationRunner, DisposableBean {
 			return;
 		}
 
-		connection = dataSource.getConnection();
+		connection = logMinerConnectionFactory.getConnection();
 
 		List<String> redoLogFiles = findRedoLogFiles(connection);
 		registerRedoLogFiles(connection, redoLogFiles);
