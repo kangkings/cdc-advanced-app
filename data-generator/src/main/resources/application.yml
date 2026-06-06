@@ -6,7 +6,7 @@ spring:
 
   batch:
     job:
-      enabled: true
+      enabled: false
 
 management:
   endpoints:
