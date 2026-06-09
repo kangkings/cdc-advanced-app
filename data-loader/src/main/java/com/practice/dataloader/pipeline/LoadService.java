@@ -1,14 +1,17 @@
 package com.practice.dataloader.pipeline;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoField;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +33,13 @@ public class LoadService {
 	private static final String MODULE = "data-loader";
 	private static final String LOAD_DURATION = "data_loader.mysql.load.duration";
 	private static final String LOAD_COUNT = "data_loader.mysql.load.count";
+	private static final String INSERT_DURATION = "data_loader.mysql.insert.duration";
+	private static final String INSERT_COUNT = "data_loader.mysql.insert.count";
+	private static final String BATCH_INSERT_DURATION = "data_loader.mysql.batch.insert.duration";
+	private static final String BATCH_INSERT_COUNT = "data_loader.mysql.batch.insert.count";
+	private static final String UPDATE_FIND_DURATION = "data_loader.mysql.update.find.duration";
+	private static final String UPDATE_SAVE_DURATION = "data_loader.mysql.update.save.duration";
+	private static final String DELETE_DURATION = "data_loader.mysql.delete.duration";
 	private static final DateTimeFormatter ORACLE_LOGMINER_TIMESTAMP_FORMATTER = new DateTimeFormatterBuilder()
 			.appendPattern("yy/MM/dd HH:mm:ss")
 			.optionalStart()
@@ -37,8 +47,59 @@ public class LoadService {
 			.optionalEnd()
 			.toFormatter();
 
+	private final JdbcTemplate jdbcTemplate;
 	private final UserRepository userRepository;
 	private final MeterRegistry meterRegistry;
+
+	@Transactional
+	public void loadBatch(List<TransformEvent> events) {
+		LocalDateTime startTime = LocalDateTime.now();
+
+		List<TransformEvent> insertEvents = events.stream()
+				.filter(e -> !shouldSkip(e))
+				.filter(e -> "P_USERS".equalsIgnoreCase(e.payload().tableName()))
+				.filter(e -> "INSERT".equalsIgnoreCase(e.payload().operation()))
+				.filter(e -> hasRequiredInsertColumns(e.payload().data()))
+				.toList();
+
+		List<TransformEvent> otherEvents = events.stream()
+				.filter(e -> !shouldSkip(e))
+				.filter(e -> "P_USERS".equalsIgnoreCase(e.payload().tableName()))
+				.filter(e -> !"INSERT".equalsIgnoreCase(e.payload().operation()))
+				.toList();
+
+		if (!insertEvents.isEmpty()) {
+			jdbcTemplate.batchUpdate("""
+					INSERT INTO p_users (id, name, email, status, created_at, updated_at)
+					VALUES (?, ?, ?, ?, ?, ?)
+					""",
+					insertEvents,
+					insertEvents.size(),
+					(ps, event) -> {
+						Map<String, Object> data = event.payload().data();
+						ps.setLong(1, asLong(event.payload().key().get("ID")));
+						ps.setString(2, asString(data.get("NAME")));
+						ps.setString(3, asString(data.get("EMAIL")));
+						ps.setString(4, asString(data.get("STATUS")));
+						ps.setObject(5, asLocalDateTime(data.get("CREATED_AT")));
+						ps.setObject(6, asLocalDateTime(data.get("UPDATED_AT")));
+					});
+
+			Duration elapsed = Duration.between(startTime, LocalDateTime.now());
+			Timer.builder(BATCH_INSERT_DURATION)
+					.description("MySQL batch insert duration")
+					.tag("module", MODULE)
+					.tag("table", "P_USERS")
+					.register(meterRegistry)
+					.record(elapsed);
+			meterRegistry.counter(BATCH_INSERT_COUNT, "module", MODULE, "table", "P_USERS")
+					.increment(insertEvents.size());
+		}
+
+		for (TransformEvent event : otherEvents) {
+			load(event);
+		}
+	}
 
 	@Transactional
 	public void load(TransformEvent event) {
@@ -106,21 +167,37 @@ public class LoadService {
 			return;
 		}
 
-		User user = userRepository.findById(id).orElseGet(() -> new User(id));
-		applyIfPresent(data, "NAME", value -> user.setName(asString(value)));
-		applyIfPresent(data, "EMAIL", value -> user.setEmail(asString(value)));
-		applyIfPresent(data, "STATUS", value -> user.setStatus(asString(value)));
-		applyIfPresent(data, "CREATED_AT", value -> user.setCreatedAt(asLocalDateTime(value)));
-		applyIfPresent(data, "UPDATED_AT", value -> user.setUpdatedAt(asLocalDateTime(value)));
+		Timer.Sample sample = Timer.start(meterRegistry);
+		jdbcTemplate.update("""
+				INSERT INTO p_users (id, name, email, status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?)
+				""",
+				id,
+				asString(data.get("NAME")),
+				asString(data.get("EMAIL")),
+				asString(data.get("STATUS")),
+				asLocalDateTime(data.get("CREATED_AT")),
+				asLocalDateTime(data.get("UPDATED_AT")));
 
-		userRepository.save(user);
+		sample.stop(Timer.builder(INSERT_DURATION)
+				.description("MySQL direct insert duration")
+				.tag("module", MODULE)
+				.tag("table", "P_USERS")
+				.register(meterRegistry));
+		meterRegistry.counter(INSERT_COUNT, "module", MODULE, "table", "P_USERS", "status", "SUCCESS").increment();
 		log.info("[LOAD][INSERT] table=P_USERS, id={}", id);
 	}
 
 	private void updateUser(RowPayload payload) {
 		Long id = asLong(payload.key().get("ID"));
+		Timer.Sample findSample = Timer.start(meterRegistry);
 		User user = userRepository.findById(id)
 				.orElse(null);
+		findSample.stop(Timer.builder(UPDATE_FIND_DURATION)
+				.description("MySQL update path find duration")
+				.tag("module", MODULE)
+				.tag("table", "P_USERS")
+				.register(meterRegistry));
 		if (user == null) {
 			log.warn("[LOAD][SKIP] update target does not exist. table=P_USERS, id={}, columns={}",
 					id,
@@ -135,13 +212,25 @@ public class LoadService {
 		applyIfPresent(data, "CREATED_AT", value -> user.setCreatedAt(asLocalDateTime(value)));
 		applyIfPresent(data, "UPDATED_AT", value -> user.setUpdatedAt(asLocalDateTime(value)));
 
+		Timer.Sample saveSample = Timer.start(meterRegistry);
 		userRepository.save(user);
+		saveSample.stop(Timer.builder(UPDATE_SAVE_DURATION)
+				.description("MySQL update path save duration")
+				.tag("module", MODULE)
+				.tag("table", "P_USERS")
+				.register(meterRegistry));
 		log.info("[LOAD][UPDATE] table=P_USERS, id={}", id);
 	}
 
 	private void deleteUser(RowPayload payload) {
 		Long id = asLong(payload.key().get("ID"));
+		Timer.Sample deleteSample = Timer.start(meterRegistry);
 		userRepository.deleteById(id);
+		deleteSample.stop(Timer.builder(DELETE_DURATION)
+				.description("MySQL delete duration")
+				.tag("module", MODULE)
+				.tag("table", "P_USERS")
+				.register(meterRegistry));
 		log.info("[LOAD][DELETE] table=P_USERS, id={}", id);
 	}
 
