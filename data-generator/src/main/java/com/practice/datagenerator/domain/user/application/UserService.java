@@ -11,7 +11,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService implements UserUsecase {
@@ -37,6 +39,11 @@ public class UserService implements UserUsecase {
 
 		}
 		catch (Exception ex) {
+			log.error("[USER-GENERATE][REQUEST][FAILED] count={}, errorType={}, message={}",
+					count,
+					ex.getClass().getName(),
+					ex.getMessage(),
+					ex);
 			throw new IllegalStateException("회원 생성 실패", ex);
 		}
 	}
