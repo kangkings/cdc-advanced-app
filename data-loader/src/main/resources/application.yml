@@ -9,6 +9,17 @@ spring:
 cdc:
   kafka:
     input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-transform-events}
+  loader:
+    tables:
+      - source-table: P_USERS
+        target-table: p_users
+        key-column: ID
+        required-insert-columns:
+          - NAME
+          - EMAIL
+          - STATUS
+          - CREATED_AT
+          - UPDATED_AT
 
 management:
   endpoints:

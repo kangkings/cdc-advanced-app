@@ -4,7 +4,6 @@ package com.practice.dataloader.observability;
 public final class LoaderMetrics {
 
 	public static final String MODULE = "data-loader";
-	public static final String P_USERS = "P_USERS";
 
 	private LoaderMetrics() {
 	}

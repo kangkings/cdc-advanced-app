@@ -31,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class LoadService {
 
+	private static final String USER_TARGET_TABLE = "p_users";
 	private static final DateTimeFormatter ORACLE_LOGMINER_TIMESTAMP_FORMATTER = new DateTimeFormatterBuilder()
 			.appendPattern("yy/MM/dd HH:mm:ss")
 			.optionalStart()
@@ -40,6 +41,7 @@ public class LoadService {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final UserRepository userRepository;
+	private final LoaderTableMappingRegistry tableMappingRegistry;
 	private final MeterRegistry meterRegistry;
 
 	@Transactional
@@ -48,18 +50,19 @@ public class LoadService {
 
 		List<TransformEvent> insertEvents = events.stream()
 				.filter(e -> !shouldSkip(e))
-				.filter(e -> LoaderMetrics.P_USERS.equalsIgnoreCase(e.payload().tableName()))
+				.filter(e -> tableMapping(e.payload()).filter(this::supportsUserMapping).isPresent())
 				.filter(e -> "INSERT".equalsIgnoreCase(e.payload().operation()))
-				.filter(e -> hasRequiredInsertColumns(e.payload().data()))
+				.filter(e -> hasRequiredInsertColumns(e.payload().data(), tableMapping(e.payload()).orElseThrow()))
 				.toList();
 
 		List<TransformEvent> otherEvents = events.stream()
 				.filter(e -> !shouldSkip(e))
-				.filter(e -> LoaderMetrics.P_USERS.equalsIgnoreCase(e.payload().tableName()))
+				.filter(e -> tableMapping(e.payload()).filter(this::supportsUserMapping).isPresent())
 				.filter(e -> !"INSERT".equalsIgnoreCase(e.payload().operation()))
 				.toList();
 
 		if (!insertEvents.isEmpty()) {
+			LoaderTableMapping mapping = tableMapping(insertEvents.getFirst().payload()).orElseThrow();
 			jdbcTemplate.batchUpdate("""
 					INSERT INTO p_users (id, name, email, status, created_at, updated_at)
 					VALUES (?, ?, ?, ?, ?, ?)
@@ -68,7 +71,7 @@ public class LoadService {
 					insertEvents.size(),
 					(ps, event) -> {
 						Map<String, Object> data = event.payload().data();
-						ps.setLong(1, asLong(event.payload().key().get("ID")));
+						ps.setLong(1, asLong(event.payload().key().get(mapping.keyColumn())));
 						ps.setString(2, asString(data.get("NAME")));
 						ps.setString(3, asString(data.get("EMAIL")));
 						ps.setString(4, asString(data.get("STATUS")));
@@ -80,13 +83,13 @@ public class LoadService {
 			Timer.builder(LoaderMetrics.Names.MYSQL_BATCH_INSERT_DURATION)
 					.description("MySQL batch insert duration")
 					.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
-					.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
+					.tag(LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 					.register(meterRegistry)
 					.record(elapsed);
 			meterRegistry.counter(
 					LoaderMetrics.Names.MYSQL_BATCH_INSERT_COUNT,
 					LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
-					LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
+					LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 					.increment(insertEvents.size());
 		}
 
@@ -110,16 +113,17 @@ public class LoadService {
 			}
 
 			RowPayload payload = event.payload();
-			if (!LoaderMetrics.P_USERS.equalsIgnoreCase(payload.tableName())) {
+			LoaderTableMapping mapping = tableMapping(payload).orElse(null);
+			if (mapping == null || !supportsUserMapping(mapping)) {
 				status = LoaderMetrics.Status.SKIPPED;
 				log.debug("[LOAD][SKIP] unsupported table={}", payload.tableName());
 				return;
 			}
 
 			switch (payload.operation().toUpperCase(Locale.ROOT)) {
-				case "INSERT" -> insertUser(payload);
-				case "UPDATE" -> updateUser(payload);
-				case "DELETE" -> deleteUser(payload);
+				case "INSERT" -> insertUser(payload, mapping);
+				case "UPDATE" -> updateUser(payload, mapping);
+				case "DELETE" -> deleteUser(payload, mapping);
 				default -> {
 					status = LoaderMetrics.Status.SKIPPED;
 					log.debug("[LOAD][SKIP] unsupported operation={}", payload.operation());
@@ -156,11 +160,12 @@ public class LoadService {
 				|| event.payload() == null;
 	}
 
-	private void insertUser(RowPayload payload) {
-		Long id = asLong(payload.key().get("ID"));
+	private void insertUser(RowPayload payload, LoaderTableMapping mapping) {
+		Long id = asLong(payload.key().get(mapping.keyColumn()));
 		Map<String, Object> data = payload.data();
-		if (!hasRequiredInsertColumns(data)) {
-			log.warn("[LOAD][SKIP] insert payload is missing required columns. table=P_USERS, id={}, columns={}",
+		if (!hasRequiredInsertColumns(data, mapping)) {
+			log.warn("[LOAD][SKIP] insert payload is missing required columns. table={}, id={}, columns={}",
+					mapping.sourceTable(),
 					id,
 					data == null ? null : data.keySet());
 			return;
@@ -181,28 +186,29 @@ public class LoadService {
 		sample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_INSERT_DURATION)
 				.description("MySQL direct insert duration")
 				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
-				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
+				.tag(LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 				.register(meterRegistry));
 		meterRegistry.counter(
 				LoaderMetrics.Names.MYSQL_INSERT_COUNT,
 				LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
-				LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS,
+				LoaderMetrics.Tags.TABLE, mapping.sourceTable(),
 				LoaderMetrics.Tags.STATUS, LoaderMetrics.Status.SUCCESS).increment();
-		log.info("[LOAD][INSERT] table=P_USERS, id={}", id);
+		log.info("[LOAD][INSERT] table={}, id={}", mapping.sourceTable(), id);
 	}
 
-	private void updateUser(RowPayload payload) {
-		Long id = asLong(payload.key().get("ID"));
+	private void updateUser(RowPayload payload, LoaderTableMapping mapping) {
+		Long id = asLong(payload.key().get(mapping.keyColumn()));
 		Timer.Sample findSample = Timer.start(meterRegistry);
 		User user = userRepository.findById(id)
 				.orElse(null);
 		findSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_UPDATE_FIND_DURATION)
 				.description("MySQL update path find duration")
 				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
-				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
+				.tag(LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 				.register(meterRegistry));
 		if (user == null) {
-			log.warn("[LOAD][SKIP] update target does not exist. table=P_USERS, id={}, columns={}",
+			log.warn("[LOAD][SKIP] update target does not exist. table={}, id={}, columns={}",
+					mapping.sourceTable(),
 					id,
 					payload.data() == null ? null : payload.data().keySet());
 			return;
@@ -220,21 +226,21 @@ public class LoadService {
 		saveSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_UPDATE_SAVE_DURATION)
 				.description("MySQL update path save duration")
 				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
-				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
+				.tag(LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 				.register(meterRegistry));
-		log.info("[LOAD][UPDATE] table=P_USERS, id={}", id);
+		log.info("[LOAD][UPDATE] table={}, id={}", mapping.sourceTable(), id);
 	}
 
-	private void deleteUser(RowPayload payload) {
-		Long id = asLong(payload.key().get("ID"));
+	private void deleteUser(RowPayload payload, LoaderTableMapping mapping) {
+		Long id = asLong(payload.key().get(mapping.keyColumn()));
 		Timer.Sample deleteSample = Timer.start(meterRegistry);
 		userRepository.deleteById(id);
 		deleteSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_DELETE_DURATION)
 				.description("MySQL delete duration")
 				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
-				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
+				.tag(LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 				.register(meterRegistry));
-		log.info("[LOAD][DELETE] table=P_USERS, id={}", id);
+		log.info("[LOAD][DELETE] table={}, id={}", mapping.sourceTable(), id);
 	}
 
 	private void applyIfPresent(Map<String, Object> data, String key, ValueApplier applier) {
@@ -243,13 +249,9 @@ public class LoadService {
 		}
 	}
 
-	private boolean hasRequiredInsertColumns(Map<String, Object> data) {
-		return data != null
-				&& hasText(data.get("NAME"))
-				&& hasText(data.get("EMAIL"))
-				&& hasText(data.get("STATUS"))
-				&& data.get("CREATED_AT") != null
-				&& data.get("UPDATED_AT") != null;
+	private boolean hasRequiredInsertColumns(Map<String, Object> data, LoaderTableMapping mapping) {
+		return data != null && mapping.requiredInsertColumns().stream()
+				.allMatch(column -> hasText(data.get(column)));
 	}
 
 	private boolean hasText(Object value) {
@@ -305,6 +307,18 @@ public class LoadService {
 			return "UNKNOWN";
 		}
 		return event.payload().operation();
+	}
+
+	private java.util.Optional<LoaderTableMapping> tableMapping(RowPayload payload) {
+		if (payload == null) {
+			return java.util.Optional.empty();
+		}
+		return tableMappingRegistry.find(payload.tableName());
+	}
+
+	// 현재 User 전용 SQL에서 처리 가능한 target table 확인
+	private boolean supportsUserMapping(LoaderTableMapping mapping) {
+		return USER_TARGET_TABLE.equalsIgnoreCase(mapping.targetTable());
 	}
 
 	@FunctionalInterface
