@@ -9,9 +9,9 @@ import com.practice.datatransformer.model.CheckResult;
 import com.practice.datatransformer.model.RedoEntry;
 import com.practice.datatransformer.model.RowPayload;
 import com.practice.datatransformer.oracle.RedoSqlParser;
-import com.practice.datatransformer.oracle.RowLookup;
-import com.practice.datatransformer.oracle.TableRule;
-import com.practice.datatransformer.oracle.TableRuleRegistry;
+import com.practice.datatransformer.oracle.SourceRowKeyLookup;
+import com.practice.datatransformer.oracle.SourceTableMapping;
+import com.practice.datatransformer.oracle.SourceTableMappingRegistry;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -27,8 +27,8 @@ public class ValidationService {
 	private static final String ROW_LOOKUP_COUNT = "data_transformer.oracle.row_lookup.count";
 
 	private final RedoSqlParser redoSqlParser;
-	private final RowLookup rowLookup;
-	private final TableRuleRegistry tableRuleRegistry;
+	private final SourceRowKeyLookup sourceRowKeyLookup;
+	private final SourceTableMappingRegistry sourceTableMappingRegistry;
 	private final MeterRegistry meterRegistry;
 
 	public CheckResult check(RedoEntry entry) {
@@ -46,37 +46,37 @@ public class ValidationService {
 			return CheckResult.unsupported("unsupported operation: " + entry.operation());
 		}
 
-		return tableRuleRegistry.find(tableName)
-				.map(rule -> checkRow(entry, rule, operation))
+		return sourceTableMappingRegistry.find(tableName)
+				.map(mapping -> checkRow(entry, mapping, operation))
 				.orElseGet(() -> CheckResult.unsupported("unsupported table: " + entry.tableName()));
 	}
 
-	private CheckResult checkRow(RedoEntry entry, TableRule rule, String operation) {
-		return findKey(rule, entry.rowId(), operation)
+	private CheckResult checkRow(RedoEntry entry, SourceTableMapping mapping, String operation) {
+		return findKey(mapping, entry.rowId(), operation)
 				.map(keyValue -> CheckResult.valid(true, keyValue))
-				.orElseGet(() -> CheckResult.invalid("%s was not found by ROWID".formatted(rule.keyColumn())));
+				.orElseGet(() -> CheckResult.invalid("%s was not found by ROWID".formatted(mapping.keyColumn())));
 	}
 
 	public RowPayload payload(RedoEntry entry, CheckResult checkResult) {
 		if (entry == null || entry.tableName() == null || entry.sqlRedo() == null || checkResult == null
-				|| !checkResult.valid() || checkResult.rowId() == null) {
+				|| !checkResult.valid() || checkResult.sourceKeyValue() == null) {
 			return null;
 		}
-		return tableRuleRegistry.find(entry.tableName())
-				.map(rule -> redoSqlParser.parsePayload(entry, rule, checkResult.rowId()))
+		return sourceTableMappingRegistry.find(entry.tableName())
+				.map(mapping -> redoSqlParser.parsePayload(entry, mapping, checkResult.sourceKeyValue()))
 				.orElse(null);
 	}
 
-	private java.util.Optional<Long> findKey(TableRule rule, String rowId, String operation) {
+	private java.util.Optional<Long> findKey(SourceTableMapping mapping, String rowId, String operation) {
 		Timer.Sample sample = Timer.start(meterRegistry);
-		java.util.Optional<Long> keyValue = rowLookup.findKeyByRowId(rule, rowId);
+		java.util.Optional<Long> keyValue = sourceRowKeyLookup.findKeyByRowId(mapping, rowId);
 		sample.stop(Timer.builder(ROW_LOOKUP_DURATION)
 				.description("Oracle row key lookup duration")
 				.tag("module", MODULE)
-				.tag("table", rule.tableName())
+				.tag("table", mapping.tableName())
 				.tag("operation", operation)
 				.register(meterRegistry));
-		meterRegistry.counter(ROW_LOOKUP_COUNT, "module", MODULE, "table", rule.tableName(), "operation", operation)
+		meterRegistry.counter(ROW_LOOKUP_COUNT, "module", MODULE, "table", mapping.tableName(), "operation", operation)
 				.increment();
 		return keyValue;
 	}

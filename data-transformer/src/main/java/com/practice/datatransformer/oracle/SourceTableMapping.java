@@ -2,7 +2,7 @@ package com.practice.datatransformer.oracle;
 
 import java.util.List;
 
-public record TableRule(
+public record SourceTableMapping(
 		String owner,
 		String tableName,
 		String keyColumn,

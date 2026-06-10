@@ -4,11 +4,11 @@ public record CheckResult(
 		boolean valid,
 		boolean supported,
 		boolean rowExists,
-		Long rowId,
+		Long sourceKeyValue,
 		String reason) {
 
-	public static CheckResult valid(boolean rowExists, Long rowId) {
-		return new CheckResult(true, true, rowExists, rowId, null);
+	public static CheckResult valid(boolean rowExists, Long sourceKeyValue) {
+		return new CheckResult(true, true, rowExists, sourceKeyValue, null);
 	}
 
 	public static CheckResult unsupported(String reason) {

@@ -9,26 +9,26 @@ import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
-public class RowLookup {
+public class SourceRowKeyLookup {
 
 	private final JdbcTemplate jdbcTemplate;
 
-	public Optional<Long> findKeyByRowId(TableRule rule, String rowId) {
-		validateIdentifier(rule.owner());
-		validateIdentifier(rule.tableName());
-		validateIdentifier(rule.keyColumn());
+	public Optional<Long> findKeyByRowId(SourceTableMapping mapping, String rowId) {
+		validateIdentifier(mapping.owner());
+		validateIdentifier(mapping.tableName());
+		validateIdentifier(mapping.keyColumn());
 		if (rowId == null || rowId.isBlank()) {
 			return Optional.empty();
 		}
 
 		return jdbcTemplate.query(
 				"SELECT %s FROM %s WHERE ROWID = CHARTOROWID(?)"
-						.formatted(rule.keyColumn(), rule.qualifiedTableName()),
+						.formatted(mapping.keyColumn(), mapping.qualifiedTableName()),
 				resultSet -> {
 					if (!resultSet.next()) {
 						return Optional.empty();
 					}
-					return Optional.of(resultSet.getLong(rule.keyColumn()));
+					return Optional.of(resultSet.getLong(mapping.keyColumn()));
 				},
 				rowId);
 	}

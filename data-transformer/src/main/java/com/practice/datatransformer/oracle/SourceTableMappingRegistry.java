@@ -8,20 +8,20 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 @Component
-public class TableRuleRegistry {
+public class SourceTableMappingRegistry {
 
-	private final Map<String, TableRule> rules = Map.of(
-			"P_USERS", new TableRule(
+	private final Map<String, SourceTableMapping> mappings = Map.of(
+			"P_USERS", new SourceTableMapping(
 					"DATA_GENERATOR",
 					"P_USERS",
 					"ID",
 					List.of("NAME", "EMAIL", "STATUS", "CREATED_AT", "UPDATED_AT")));
 
-	public Optional<TableRule> find(String tableName) {
+	public Optional<SourceTableMapping> find(String tableName) {
 		if (tableName == null || tableName.isBlank()) {
 			return Optional.empty();
 		}
-		return Optional.ofNullable(rules.get(tableName.toUpperCase(Locale.ROOT)));
+		return Optional.ofNullable(mappings.get(tableName.toUpperCase(Locale.ROOT)));
 	}
 
 }

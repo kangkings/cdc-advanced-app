@@ -4,6 +4,6 @@ public record CheckResult(
 		boolean valid,
 		boolean supported,
 		boolean rowExists,
-		Long rowId,
+		Long sourceKeyValue,
 		String reason) {
 }

@@ -47,27 +47,27 @@ public class RedoSqlParser {
 				.or(() -> findLong(insertPattern, sqlRedo));
 	}
 
-	public RowPayload parsePayload(RedoEntry entry, TableRule rule, Long keyValue) {
+	public RowPayload parsePayload(RedoEntry entry, SourceTableMapping mapping, Long keyValue) {
 		return new RowPayload(
-				rule.tableName(),
+				mapping.tableName(),
 				entry.operation().toUpperCase(Locale.ROOT),
-				Map.of(rule.keyColumn(), keyValue),
-				parseData(entry.sqlRedo(), entry.operation(), rule));
+				Map.of(mapping.keyColumn(), keyValue),
+				parseData(entry.sqlRedo(), entry.operation(), mapping));
 	}
 
-	private Map<String, Object> parseData(String sqlRedo, String operation, TableRule rule) {
+	private Map<String, Object> parseData(String sqlRedo, String operation, SourceTableMapping mapping) {
 		if (operation == null) {
 			return Map.of();
 		}
 
 		return switch (operation.toUpperCase(Locale.ROOT)) {
-			case "INSERT" -> parseInsertValues(sqlRedo, rule);
+			case "INSERT" -> parseInsertValues(sqlRedo, mapping);
 			case "UPDATE" -> parseUpdateValues(sqlRedo);
 			default -> Map.of();
 		};
 	}
 
-	private Map<String, Object> parseInsertValues(String sqlRedo, TableRule rule) {
+	private Map<String, Object> parseInsertValues(String sqlRedo, SourceTableMapping mapping) {
 		int valuesIndex = indexOfKeyword(sqlRedo, "values");
 		if (valuesIndex < 0) {
 			log.warn("[REDO-SQL-PARSER][INSERT] VALUES keyword was not found. sqlRedo={}", abbreviate(sqlRedo));
@@ -89,7 +89,7 @@ public class RedoSqlParser {
 		}
 
 		List<String> columns = columnGroup == null || looksLikeTableNameGroup(columnGroup)
-				? rule.insertColumns()
+				? mapping.insertColumns()
 				: splitTopLevel(columnGroup);
 		List<String> values = splitTopLevel(valueGroup);
 		if (columns.isEmpty()) {
