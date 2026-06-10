@@ -8,6 +8,8 @@ import org.springframework.batch.core.listener.StepExecutionListener;
 import org.springframework.batch.core.step.StepExecution;
 import org.springframework.stereotype.Component;
 
+import com.practice.datagenerator.observability.GeneratorMetrics;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
@@ -17,13 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 public class UserGenerateStepLoggingListener implements StepExecutionListener {
-
-	private static final String MODULE = "data-generator";
-	private static final String STEP_DURATION = "data_generator.user.step.duration";
-	private static final String READ_COUNT = "data_generator.user.read.count";
-	private static final String WRITE_COUNT = "data_generator.user.write.count";
-	private static final String FILTER_COUNT = "data_generator.user.filter.count";
-	private static final String SKIP_COUNT = "data_generator.user.skip.count";
 
 	private final MeterRegistry meterRegistry;
 
@@ -42,18 +37,18 @@ public class UserGenerateStepLoggingListener implements StepExecutionListener {
 		String status = stepExecution.getStatus().name();
 		String stepName = stepExecution.getStepName();
 
-		Timer.builder(STEP_DURATION)
+		Timer.builder(GeneratorMetrics.Names.USER_STEP_DURATION)
 				.description("User generate batch step duration")
-				.tag("module", MODULE)
-				.tag("step", stepName)
-				.tag("status", status)
+				.tag(GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE)
+				.tag(GeneratorMetrics.Tags.STEP, stepName)
+				.tag(GeneratorMetrics.Tags.STATUS, status)
 				.register(meterRegistry)
 				.record(elapsed);
 
-		increment(READ_COUNT, stepName, status, stepExecution.getReadCount());
-		increment(WRITE_COUNT, stepName, status, stepExecution.getWriteCount());
-		increment(FILTER_COUNT, stepName, status, stepExecution.getFilterCount());
-		increment(SKIP_COUNT, stepName, status,
+		increment(GeneratorMetrics.Names.USER_READ_COUNT, stepName, status, stepExecution.getReadCount());
+		increment(GeneratorMetrics.Names.USER_WRITE_COUNT, stepName, status, stepExecution.getWriteCount());
+		increment(GeneratorMetrics.Names.USER_FILTER_COUNT, stepName, status, stepExecution.getFilterCount());
+		increment(GeneratorMetrics.Names.USER_SKIP_COUNT, stepName, status,
 				stepExecution.getReadSkipCount() + stepExecution.getProcessSkipCount() + stepExecution.getWriteSkipCount());
 
 		log.info("[USER-GENERATE][STEP][END] stepName={}, stepExecutionId={}, status={}, readCount={}, writeCount={}, elapsedMs={}",
@@ -72,9 +67,9 @@ public class UserGenerateStepLoggingListener implements StepExecutionListener {
 			return;
 		}
 		meterRegistry.counter(name,
-				"module", MODULE,
-				"step", stepName,
-				"status", status).increment(amount);
+				GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE,
+				GeneratorMetrics.Tags.STEP, stepName,
+				GeneratorMetrics.Tags.STATUS, status).increment(amount);
 	}
 
 	private Duration elapsed(LocalDateTime startTime, LocalDateTime endTime) {

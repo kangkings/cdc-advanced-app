@@ -7,6 +7,8 @@ import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.listener.JobExecutionListener;
 import org.springframework.stereotype.Component;
 
+import com.practice.datagenerator.observability.GeneratorMetrics;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
@@ -16,10 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 public class UserGenerateJobLoggingListener implements JobExecutionListener {
-
-	private static final String MODULE = "data-generator";
-	private static final String JOB_DURATION = "data_generator.user.job.duration";
-	private static final String JOB_FAILURE_COUNT = "data_generator.user.job.failure.count";
 
 	private final MeterRegistry meterRegistry;
 
@@ -37,19 +35,20 @@ public class UserGenerateJobLoggingListener implements JobExecutionListener {
 		LocalDateTime endTime = jobExecution.getEndTime();
 		Duration elapsed = elapsed(startTime, endTime);
 
-		Timer.builder(JOB_DURATION)
+		Timer.builder(GeneratorMetrics.Names.USER_JOB_DURATION)
 				.description("User generate batch job duration")
-				.tag("module", MODULE)
-				.tag("job", jobExecution.getJobInstance().getJobName())
-				.tag("status", jobExecution.getStatus().name())
+				.tag(GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE)
+				.tag(GeneratorMetrics.Tags.JOB, jobExecution.getJobInstance().getJobName())
+				.tag(GeneratorMetrics.Tags.STATUS, jobExecution.getStatus().name())
 				.register(meterRegistry)
 				.record(elapsed);
 
 		if (jobExecution.getStatus().isUnsuccessful()) {
-			meterRegistry.counter(JOB_FAILURE_COUNT,
-					"module", MODULE,
-					"job", jobExecution.getJobInstance().getJobName(),
-					"status", jobExecution.getStatus().name()).increment();
+			meterRegistry.counter(
+					GeneratorMetrics.Names.USER_JOB_FAILURE_COUNT,
+					GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE,
+					GeneratorMetrics.Tags.JOB, jobExecution.getJobInstance().getJobName(),
+					GeneratorMetrics.Tags.STATUS, jobExecution.getStatus().name()).increment();
 		}
 
 		log.info("[USER-GENERATE][JOB][END] jobName={}, jobExecutionId={}, status={}, elapsedMs={}",

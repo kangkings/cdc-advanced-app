@@ -13,6 +13,7 @@ import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 
 import com.practice.logscanner.batch.model.RedoLogEntry;
+import com.practice.logscanner.observability.LogScannerMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -22,13 +23,6 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Component
 public class RedoLogItemWriter implements ItemWriter<RedoLogEntry> {
-
-	private static final String MODULE = "log-scanner";
-	private static final String PUBLISH_DURATION = "log_scanner.kafka.publish.chunk.duration";
-	private static final String PUBLISH_CHUNK_COUNT = "log_scanner.kafka.publish.chunk.count";
-	private static final String PUBLISH_ENTRY_COUNT = "log_scanner.kafka.publish.entry.count";
-	private static final String PUBLISH_SUCCESS_COUNT = "log_scanner.kafka.publish.success.count";
-	private static final String PUBLISH_FAILURE_COUNT = "log_scanner.kafka.publish.failure.count";
 
 	private final KafkaTemplate<String, String> kafkaTemplate;
 	private final ObjectMapper objectMapper;
@@ -61,19 +55,26 @@ public class RedoLogItemWriter implements ItemWriter<RedoLogEntry> {
 					.whenComplete((result, exception) -> handleSendResult(entry, result, exception, failures))
 					.handle((result, exception) -> null);
 			futures.add(future);
-			meterRegistry.counter(PUBLISH_ENTRY_COUNT, "module", MODULE, "topic", topic).increment();
+			meterRegistry.counter(
+					LogScannerMetrics.Names.KAFKA_PUBLISH_ENTRY_COUNT,
+					LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+					LogScannerMetrics.Tags.TOPIC, topic).increment();
 		}
 
 		CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
 
-		String status = failures.get() == 0 ? "SUCCESS" : "FAILED";
-		sample.stop(Timer.builder(PUBLISH_DURATION)
+		String status = failures.get() == 0 ? LogScannerMetrics.Status.SUCCESS : LogScannerMetrics.Status.FAILED;
+		sample.stop(Timer.builder(LogScannerMetrics.Names.KAFKA_PUBLISH_CHUNK_DURATION)
 				.description("Kafka redo log publish chunk duration")
-				.tag("module", MODULE)
-				.tag("topic", topic)
-				.tag("status", status)
+				.tag(LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE)
+				.tag(LogScannerMetrics.Tags.TOPIC, topic)
+				.tag(LogScannerMetrics.Tags.STATUS, status)
 				.register(meterRegistry));
-		meterRegistry.counter(PUBLISH_CHUNK_COUNT, "module", MODULE, "topic", topic, "status", status).increment();
+		meterRegistry.counter(
+				LogScannerMetrics.Names.KAFKA_PUBLISH_CHUNK_COUNT,
+				LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+				LogScannerMetrics.Tags.TOPIC, topic,
+				LogScannerMetrics.Tags.STATUS, status).increment();
 
 		log.info("[REDO-LOG-PUBLISH][WRITER][END] topic={}, chunkSize={}, failures={}",
 				topic,
@@ -96,12 +97,18 @@ public class RedoLogItemWriter implements ItemWriter<RedoLogEntry> {
 			Throwable exception,
 			AtomicInteger failures) {
 		if (exception == null) {
-			meterRegistry.counter(PUBLISH_SUCCESS_COUNT, "module", MODULE, "topic", topic).increment();
+			meterRegistry.counter(
+					LogScannerMetrics.Names.KAFKA_PUBLISH_SUCCESS_COUNT,
+					LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+					LogScannerMetrics.Tags.TOPIC, topic).increment();
 			return;
 		}
 
 		failures.incrementAndGet();
-		meterRegistry.counter(PUBLISH_FAILURE_COUNT, "module", MODULE, "topic", topic).increment();
+		meterRegistry.counter(
+				LogScannerMetrics.Names.KAFKA_PUBLISH_FAILURE_COUNT,
+				LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+				LogScannerMetrics.Tags.TOPIC, topic).increment();
 		log.error("[REDO-LOG-PUBLISH][WRITER][ERROR] topic={}, key={}, scn={}, row={}, operation={}, owner={}, table={}",
 				topic,
 				createKey(entry),

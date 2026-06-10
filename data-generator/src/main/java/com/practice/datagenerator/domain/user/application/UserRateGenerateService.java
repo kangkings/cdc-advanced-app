@@ -13,6 +13,7 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Service;
 
 import com.practice.datagenerator.domain.user.infrastructure.UserJdbcBulkInserter;
+import com.practice.datagenerator.observability.GeneratorMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -22,17 +23,11 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class UserRateGenerateService implements DisposableBean {
 
-	private static final String MODULE = "data-generator";
 	private static final String STATUS_IDLE = "IDLE";
 	private static final String STATUS_RUNNING = "RUNNING";
 	private static final String STATUS_COMPLETED = "COMPLETED";
 	private static final String STATUS_STOPPED = "STOPPED";
 	private static final String STATUS_FAILED = "FAILED";
-
-	private static final String TICK_COUNT = "data_generator.rate.tick.count";
-	private static final String INSERT_COUNT = "data_generator.rate.insert.count";
-	private static final String FAILURE_COUNT = "data_generator.rate.failure.count";
-	private static final String INSERT_DURATION = "data_generator.rate.insert.duration";
 
 	private final UserJdbcBulkInserter userJdbcBulkInserter;
 	private final MeterRegistry meterRegistry;
@@ -125,20 +120,30 @@ public class UserRateGenerateService implements DisposableBean {
 		try {
 			userJdbcBulkInserter.insertUsers(rate);
 			long total = generatedCount.addAndGet(rate);
-			meterRegistry.counter(TICK_COUNT, "module", MODULE, "status", "SUCCESS").increment();
-			meterRegistry.counter(INSERT_COUNT, "module", MODULE).increment(rate);
-			Timer.builder(INSERT_DURATION)
+			meterRegistry.counter(
+					GeneratorMetrics.Names.RATE_TICK_COUNT,
+					GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE,
+					GeneratorMetrics.Tags.STATUS, GeneratorMetrics.Status.SUCCESS).increment();
+			meterRegistry.counter(
+					GeneratorMetrics.Names.RATE_INSERT_COUNT,
+					GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE).increment(rate);
+			Timer.builder(GeneratorMetrics.Names.RATE_INSERT_DURATION)
 					.description("Rate generator insert duration")
-					.tag("module", MODULE)
-					.tag("status", "SUCCESS")
+					.tag(GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE)
+					.tag(GeneratorMetrics.Tags.STATUS, GeneratorMetrics.Status.SUCCESS)
 					.register(meterRegistry)
 					.record(Duration.between(tickStart, LocalDateTime.now()));
 			log.info("[RATE-GENERATE][TICK] inserted={}, totalInserted={}, elapsedMs={}",
 					rate, total, Duration.between(tickStart, LocalDateTime.now()).toMillis());
 		} catch (Exception ex) {
 			failedCount.incrementAndGet();
-			meterRegistry.counter(TICK_COUNT, "module", MODULE, "status", "FAILED").increment();
-			meterRegistry.counter(FAILURE_COUNT, "module", MODULE).increment();
+			meterRegistry.counter(
+					GeneratorMetrics.Names.RATE_TICK_COUNT,
+					GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE,
+					GeneratorMetrics.Tags.STATUS, GeneratorMetrics.Status.FAILED).increment();
+			meterRegistry.counter(
+					GeneratorMetrics.Names.RATE_FAILURE_COUNT,
+					GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE).increment();
 			fail(ex);
 		}
 	}

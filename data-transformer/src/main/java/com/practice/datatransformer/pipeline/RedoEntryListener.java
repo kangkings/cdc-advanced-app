@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 
 import com.practice.datatransformer.model.RedoEntry;
 import com.practice.datatransformer.model.TransformEvent;
+import com.practice.datatransformer.observability.TransformerMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -17,10 +18,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class RedoEntryListener {
 
-	private static final String MODULE = "data-transformer";
-	private static final String CONSUME_COUNT = "data_transformer.kafka.consume.count";
-	private static final String PROCESS_DURATION = "data_transformer.pipeline.process.duration";
-
 	private final ObjectMapper objectMapper;
 	private final TransformService transformService;
 	private final TransformProducer transformProducer;
@@ -32,7 +29,7 @@ public class RedoEntryListener {
 			containerFactory = "kafkaListenerContainerFactory")
 	public void listen(String message) throws Exception {
 		Timer.Sample sample = Timer.start(meterRegistry);
-		String status = "SUCCESS";
+		String status = TransformerMetrics.Status.SUCCESS;
 
 		try {
 			RedoEntry entry = objectMapper.readValue(message, RedoEntry.class);
@@ -47,16 +44,19 @@ public class RedoEntryListener {
 					event.check().rowExists());
 		}
 		catch (Exception ex) {
-			status = "FAILED";
+			status = TransformerMetrics.Status.FAILED;
 			log.error("[TRANSFORM][FAILED] message={}", message, ex);
 			throw ex;
 		}
 		finally {
-			meterRegistry.counter(CONSUME_COUNT, "module", MODULE, "status", status).increment();
-			sample.stop(Timer.builder(PROCESS_DURATION)
+			meterRegistry.counter(
+					TransformerMetrics.Names.KAFKA_CONSUME_COUNT,
+					TransformerMetrics.Tags.MODULE, TransformerMetrics.MODULE,
+					TransformerMetrics.Tags.STATUS, status).increment();
+			sample.stop(Timer.builder(TransformerMetrics.Names.PIPELINE_PROCESS_DURATION)
 					.description("Data transformer pipeline process duration")
-					.tag("module", MODULE)
-					.tag("status", status)
+					.tag(TransformerMetrics.Tags.MODULE, TransformerMetrics.MODULE)
+					.tag(TransformerMetrics.Tags.STATUS, status)
 					.register(meterRegistry));
 		}
 	}

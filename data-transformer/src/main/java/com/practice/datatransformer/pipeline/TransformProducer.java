@@ -6,6 +6,7 @@ import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 
 import com.practice.datatransformer.model.TransformEvent;
+import com.practice.datatransformer.observability.TransformerMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -14,9 +15,6 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Component
 public class TransformProducer {
-
-	private static final String MODULE = "data-transformer";
-	private static final String PUBLISH_COUNT = "data_transformer.kafka.publish.count";
 
 	private final KafkaTemplate<String, String> kafkaTemplate;
 	private final ObjectMapper objectMapper;
@@ -46,8 +44,12 @@ public class TransformProducer {
 	}
 
 	private void handleResult(String key, SendResult<String, String> result, Throwable exception) {
-		String status = exception == null ? "SUCCESS" : "FAILED";
-		meterRegistry.counter(PUBLISH_COUNT, "module", MODULE, "topic", outputTopic, "status", status)
+		String status = exception == null ? TransformerMetrics.Status.SUCCESS : TransformerMetrics.Status.FAILED;
+		meterRegistry.counter(
+				TransformerMetrics.Names.KAFKA_PUBLISH_COUNT,
+				TransformerMetrics.Tags.MODULE, TransformerMetrics.MODULE,
+				TransformerMetrics.Tags.TOPIC, outputTopic,
+				TransformerMetrics.Tags.STATUS, status)
 				.increment();
 
 		if (exception == null) {

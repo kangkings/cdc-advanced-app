@@ -5,14 +5,12 @@ import java.time.LocalDateTime;
 
 import org.springframework.batch.infrastructure.item.ItemReader;
 
+import com.practice.datagenerator.observability.GeneratorMetrics;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 
 public class UserGenerateItemReader implements ItemReader<Integer> {
-
-	private static final String MODULE = "data-generator";
-	private static final String READER_DURATION = "data_generator.user.reader.duration";
-	private static final String READER_COUNT = "data_generator.user.reader.count";
 
 	private final int count;
 	private final MeterRegistry meterRegistry;
@@ -32,12 +30,14 @@ public class UserGenerateItemReader implements ItemReader<Integer> {
 
 		if (current >= count) {
 			LocalDateTime endTime = LocalDateTime.now();
-			Timer.builder(READER_DURATION)
+			Timer.builder(GeneratorMetrics.Names.USER_READER_DURATION)
 					.description("User generate item reader duration")
-					.tag("module", MODULE)
+					.tag(GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE)
 					.register(meterRegistry)
 					.record(Duration.between(startTime, endTime));
-			meterRegistry.counter(READER_COUNT, "module", MODULE).increment(current);
+			meterRegistry.counter(
+					GeneratorMetrics.Names.USER_READER_COUNT,
+					GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE).increment(current);
 			return null;
 		}
 		current++;

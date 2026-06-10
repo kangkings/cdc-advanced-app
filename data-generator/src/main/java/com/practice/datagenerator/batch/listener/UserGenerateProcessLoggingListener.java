@@ -4,6 +4,7 @@ import org.springframework.batch.core.listener.ItemProcessListener;
 import org.springframework.stereotype.Component;
 
 import com.practice.datagenerator.domain.user.domain.entity.User;
+import com.practice.datagenerator.observability.GeneratorMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -15,11 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UserGenerateProcessLoggingListener implements ItemProcessListener<Integer, User> {
 
-	private static final String MODULE = "data-generator";
-	private static final String PROCESS_DURATION = "data_generator.user.processor.duration";
-	private static final String PROCESS_COUNT = "data_generator.user.process.count";
-	private static final String PROCESS_ERROR_COUNT = "data_generator.user.process.error.count";
-
 	private final MeterRegistry meterRegistry;
 	private final ThreadLocal<Timer.Sample> sampleHolder = new ThreadLocal<>();
 
@@ -30,14 +26,19 @@ public class UserGenerateProcessLoggingListener implements ItemProcessListener<I
 
 	@Override
 	public void afterProcess(Integer item, User result) {
-		stopTimer("SUCCESS");
-		meterRegistry.counter(PROCESS_COUNT, "module", MODULE, "status", "SUCCESS").increment();
+		stopTimer(GeneratorMetrics.Status.SUCCESS);
+		meterRegistry.counter(
+				GeneratorMetrics.Names.USER_PROCESS_COUNT,
+				GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE,
+				GeneratorMetrics.Tags.STATUS, GeneratorMetrics.Status.SUCCESS).increment();
 	}
 
 	@Override
 	public void onProcessError(Integer item, Exception exception) {
-		stopTimer("FAILED");
-		meterRegistry.counter(PROCESS_ERROR_COUNT, "module", MODULE).increment();
+		stopTimer(GeneratorMetrics.Status.FAILED);
+		meterRegistry.counter(
+				GeneratorMetrics.Names.USER_PROCESS_ERROR_COUNT,
+				GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE).increment();
 		log.error("[USER-GENERATE][PROCESSOR][ERROR] item={}", item, exception);
 	}
 
@@ -46,10 +47,10 @@ public class UserGenerateProcessLoggingListener implements ItemProcessListener<I
 		if (sample == null) {
 			return;
 		}
-		sample.stop(Timer.builder(PROCESS_DURATION)
+		sample.stop(Timer.builder(GeneratorMetrics.Names.USER_PROCESSOR_DURATION)
 				.description("User generate item processor duration")
-				.tag("module", MODULE)
-				.tag("status", status)
+				.tag(GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE)
+				.tag(GeneratorMetrics.Tags.STATUS, status)
 				.register(meterRegistry));
 		sampleHolder.remove();
 	}

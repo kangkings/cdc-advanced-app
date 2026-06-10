@@ -8,6 +8,8 @@ import org.springframework.batch.core.listener.StepExecutionListener;
 import org.springframework.batch.core.step.StepExecution;
 import org.springframework.stereotype.Component;
 
+import com.practice.logscanner.observability.LogScannerMetrics;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 public class RedoLogPrintStepLoggingListener implements StepExecutionListener {
-
-	private static final String MODULE = "log-scanner";
-	private static final String STEP_DURATION = "log_scanner.redo_log.step.duration";
-	private static final String READ_COUNT = "log_scanner.redo_log.read.count";
-	private static final String WRITE_COUNT = "log_scanner.redo_log.write.count";
-	private static final String SKIP_COUNT = "log_scanner.redo_log.skip.count";
 
 	private final MeterRegistry meterRegistry;
 
@@ -36,17 +32,17 @@ public class RedoLogPrintStepLoggingListener implements StepExecutionListener {
 		String status = stepExecution.getStatus().name();
 		String stepName = stepExecution.getStepName();
 
-		Timer.builder(STEP_DURATION)
+		Timer.builder(LogScannerMetrics.Names.REDO_LOG_STEP_DURATION)
 				.description("Redo log print batch step duration")
-				.tag("module", MODULE)
-				.tag("step", stepName)
-				.tag("status", status)
+				.tag(LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE)
+				.tag(LogScannerMetrics.Tags.STEP, stepName)
+				.tag(LogScannerMetrics.Tags.STATUS, status)
 				.register(meterRegistry)
 				.record(elapsed);
 
-		increment(READ_COUNT, stepName, status, stepExecution.getReadCount());
-		increment(WRITE_COUNT, stepName, status, stepExecution.getWriteCount());
-		increment(SKIP_COUNT, stepName, status,
+		increment(LogScannerMetrics.Names.REDO_LOG_READ_COUNT, stepName, status, stepExecution.getReadCount());
+		increment(LogScannerMetrics.Names.REDO_LOG_WRITE_COUNT, stepName, status, stepExecution.getWriteCount());
+		increment(LogScannerMetrics.Names.REDO_LOG_SKIP_COUNT, stepName, status,
 				stepExecution.getReadSkipCount() + stepExecution.getProcessSkipCount() + stepExecution.getWriteSkipCount());
 
 		if (stepExecution.getWriteCount() > 0) {
@@ -65,9 +61,9 @@ public class RedoLogPrintStepLoggingListener implements StepExecutionListener {
 			return;
 		}
 		meterRegistry.counter(name,
-				"module", MODULE,
-				"step", stepName,
-				"status", status).increment(amount);
+				LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+				LogScannerMetrics.Tags.STEP, stepName,
+				LogScannerMetrics.Tags.STATUS, status).increment(amount);
 	}
 
 	private Duration elapsed(LocalDateTime startTime, LocalDateTime endTime) {

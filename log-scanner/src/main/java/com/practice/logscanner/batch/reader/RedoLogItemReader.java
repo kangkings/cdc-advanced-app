@@ -19,6 +19,7 @@ import com.practice.logscanner.batch.model.RedoLogEntry;
 import com.practice.logscanner.logminer.LogMinerCheckpointRepository;
 import com.practice.logscanner.logminer.LogMinerConnectionFactory;
 import com.practice.logscanner.logminer.RedoLogFileRegistrar;
+import com.practice.logscanner.observability.LogScannerMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -26,10 +27,6 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
-
-	private static final String MODULE = "log-scanner";
-	private static final String READER_DURATION = "log_scanner.redo_log.reader.duration";
-	private static final String READER_COUNT = "log_scanner.redo_log.reader.count";
 
 	private final LogMinerConnectionFactory logMinerConnectionFactory;
 	private final LogMinerCheckpointRepository checkpointRepository;
@@ -148,13 +145,15 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 
 		if (startTime != null) {
 			Duration elapsed = Duration.between(startTime, LocalDateTime.now());
-			Timer.builder(READER_DURATION)
+			Timer.builder(LogScannerMetrics.Names.REDO_LOG_READER_DURATION)
 					.description("Redo log print item reader duration")
-					.tag("module", MODULE)
+					.tag(LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE)
 					.register(meterRegistry)
 					.record(elapsed);
 			if (rowNumber > 0) {
-				meterRegistry.counter(READER_COUNT, "module", MODULE).increment(rowNumber);
+				meterRegistry.counter(
+						LogScannerMetrics.Names.REDO_LOG_READER_COUNT,
+						LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE).increment(rowNumber);
 				log.info("[REDO-LOG-PRINT][READER][CLOSE] rowCount={}, elapsedMs={}", rowNumber, elapsed.toMillis());
 			}
 		}

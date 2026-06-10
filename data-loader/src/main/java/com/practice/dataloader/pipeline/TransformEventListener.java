@@ -8,6 +8,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import com.practice.dataloader.model.TransformEvent;
+import com.practice.dataloader.observability.LoaderMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -19,10 +20,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class TransformEventListener {
 
-	private static final String MODULE = "data-loader";
-	private static final String CONSUME_COUNT = "data_loader.kafka.consume.count";
-	private static final String LISTENER_DURATION = "data_loader.kafka.listener.duration";
-
 	private final ObjectMapper objectMapper;
 	private final LoadService loadService;
 	private final MeterRegistry meterRegistry;
@@ -33,7 +30,7 @@ public class TransformEventListener {
 			containerFactory = "kafkaListenerContainerFactory")
 	public void listen(List<String> messages) {
 		LocalDateTime startTime = LocalDateTime.now();
-		String status = "SUCCESS";
+		String status = LoaderMetrics.Status.SUCCESS;
 		try {
 			List<TransformEvent> events = messages.stream()
 					.map(this::deserialize)
@@ -41,16 +38,19 @@ public class TransformEventListener {
 			loadService.loadBatch(events);
 		}
 		catch (Exception ex) {
-			status = "FAILED";
+			status = LoaderMetrics.Status.FAILED;
 			log.error("[LOAD][BATCH][FAILED] batchSize={}", messages.size(), ex);
 			throw ex;
 		}
 		finally {
-			meterRegistry.counter(CONSUME_COUNT, "module", MODULE, "status", status).increment(messages.size());
-			io.micrometer.core.instrument.Timer.builder(LISTENER_DURATION)
+			meterRegistry.counter(
+					LoaderMetrics.Names.KAFKA_CONSUME_COUNT,
+					LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
+					LoaderMetrics.Tags.STATUS, status).increment(messages.size());
+			io.micrometer.core.instrument.Timer.builder(LoaderMetrics.Names.KAFKA_LISTENER_DURATION)
 					.description("Data loader Kafka batch listener duration")
-					.tag("module", MODULE)
-					.tag("status", status)
+					.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+					.tag(LoaderMetrics.Tags.STATUS, status)
 					.register(meterRegistry)
 					.record(Duration.between(startTime, LocalDateTime.now()));
 		}

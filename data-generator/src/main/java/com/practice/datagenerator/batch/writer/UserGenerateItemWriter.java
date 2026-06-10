@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import com.practice.datagenerator.domain.user.domain.entity.User;
+import com.practice.datagenerator.observability.GeneratorMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -18,11 +19,6 @@ import lombok.RequiredArgsConstructor;
 @Component
 @RequiredArgsConstructor
 public class UserGenerateItemWriter implements ItemWriter<User> {
-
-	private static final String MODULE = "data-generator";
-	private static final String WRITER_DURATION = "data_generator.user.writer.duration";
-	private static final String WRITER_CHUNK_COUNT = "data_generator.user.writer.chunk.count";
-	private static final String WRITER_ITEM_COUNT = "data_generator.user.writer.item.count";
 
 	private final JdbcTemplate jdbcTemplate;
 	private final MeterRegistry meterRegistry;
@@ -52,13 +48,17 @@ public class UserGenerateItemWriter implements ItemWriter<User> {
 				});
 
 		LocalDateTime endTime = LocalDateTime.now();
-		Timer.builder(WRITER_DURATION)
+		Timer.builder(GeneratorMetrics.Names.USER_WRITER_DURATION)
 				.description("User generate item writer duration")
-				.tag("module", MODULE)
+				.tag(GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE)
 				.register(meterRegistry)
 				.record(Duration.between(startTime, endTime));
-		meterRegistry.counter(WRITER_CHUNK_COUNT, "module", MODULE).increment();
-		meterRegistry.counter(WRITER_ITEM_COUNT, "module", MODULE).increment(chunk.size());
+		meterRegistry.counter(
+				GeneratorMetrics.Names.USER_WRITER_CHUNK_COUNT,
+				GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE).increment();
+		meterRegistry.counter(
+				GeneratorMetrics.Names.USER_WRITER_ITEM_COUNT,
+				GeneratorMetrics.Tags.MODULE, GeneratorMetrics.MODULE).increment(chunk.size());
 	}
 
 }

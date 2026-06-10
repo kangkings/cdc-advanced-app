@@ -8,6 +8,8 @@ import org.springframework.batch.core.listener.JobExecutionListener;
 import org.springframework.batch.core.step.StepExecution;
 import org.springframework.stereotype.Component;
 
+import com.practice.logscanner.observability.LogScannerMetrics;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
@@ -17,10 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 public class RedoLogPrintJobLoggingListener implements JobExecutionListener {
-
-	private static final String MODULE = "log-scanner";
-	private static final String JOB_DURATION = "log_scanner.redo_log.job.duration";
-	private static final String JOB_FAILURE_COUNT = "log_scanner.redo_log.job.failure.count";
 
 	private final MeterRegistry meterRegistry;
 
@@ -34,19 +32,20 @@ public class RedoLogPrintJobLoggingListener implements JobExecutionListener {
 		long writeCount = jobExecution.getStepExecutions().stream()
 				.mapToLong(StepExecution::getWriteCount).sum();
 
-		Timer.builder(JOB_DURATION)
+		Timer.builder(LogScannerMetrics.Names.REDO_LOG_JOB_DURATION)
 				.description("Redo log print batch job duration")
-				.tag("module", MODULE)
-				.tag("job", jobExecution.getJobInstance().getJobName())
-				.tag("status", jobExecution.getStatus().name())
+				.tag(LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE)
+				.tag(LogScannerMetrics.Tags.JOB, jobExecution.getJobInstance().getJobName())
+				.tag(LogScannerMetrics.Tags.STATUS, jobExecution.getStatus().name())
 				.register(meterRegistry)
 				.record(elapsed);
 
 		if (jobExecution.getStatus().isUnsuccessful()) {
-			meterRegistry.counter(JOB_FAILURE_COUNT,
-					"module", MODULE,
-					"job", jobExecution.getJobInstance().getJobName(),
-					"status", jobExecution.getStatus().name()).increment();
+			meterRegistry.counter(
+					LogScannerMetrics.Names.REDO_LOG_JOB_FAILURE_COUNT,
+					LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+					LogScannerMetrics.Tags.JOB, jobExecution.getJobInstance().getJobName(),
+					LogScannerMetrics.Tags.STATUS, jobExecution.getStatus().name()).increment();
 			log.error("[REDO-LOG-PRINT][JOB][END] status={}, elapsedMs={}", jobExecution.getStatus(), elapsed.toMillis());
 			return;
 		}

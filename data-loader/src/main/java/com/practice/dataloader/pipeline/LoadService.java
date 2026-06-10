@@ -19,6 +19,7 @@ import com.practice.dataloader.model.RowPayload;
 import com.practice.dataloader.model.TransformEvent;
 import com.practice.dataloader.mysql.User;
 import com.practice.dataloader.mysql.UserRepository;
+import com.practice.dataloader.observability.LoaderMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -30,16 +31,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class LoadService {
 
-	private static final String MODULE = "data-loader";
-	private static final String LOAD_DURATION = "data_loader.mysql.load.duration";
-	private static final String LOAD_COUNT = "data_loader.mysql.load.count";
-	private static final String INSERT_DURATION = "data_loader.mysql.insert.duration";
-	private static final String INSERT_COUNT = "data_loader.mysql.insert.count";
-	private static final String BATCH_INSERT_DURATION = "data_loader.mysql.batch.insert.duration";
-	private static final String BATCH_INSERT_COUNT = "data_loader.mysql.batch.insert.count";
-	private static final String UPDATE_FIND_DURATION = "data_loader.mysql.update.find.duration";
-	private static final String UPDATE_SAVE_DURATION = "data_loader.mysql.update.save.duration";
-	private static final String DELETE_DURATION = "data_loader.mysql.delete.duration";
 	private static final DateTimeFormatter ORACLE_LOGMINER_TIMESTAMP_FORMATTER = new DateTimeFormatterBuilder()
 			.appendPattern("yy/MM/dd HH:mm:ss")
 			.optionalStart()
@@ -57,14 +48,14 @@ public class LoadService {
 
 		List<TransformEvent> insertEvents = events.stream()
 				.filter(e -> !shouldSkip(e))
-				.filter(e -> "P_USERS".equalsIgnoreCase(e.payload().tableName()))
+				.filter(e -> LoaderMetrics.P_USERS.equalsIgnoreCase(e.payload().tableName()))
 				.filter(e -> "INSERT".equalsIgnoreCase(e.payload().operation()))
 				.filter(e -> hasRequiredInsertColumns(e.payload().data()))
 				.toList();
 
 		List<TransformEvent> otherEvents = events.stream()
 				.filter(e -> !shouldSkip(e))
-				.filter(e -> "P_USERS".equalsIgnoreCase(e.payload().tableName()))
+				.filter(e -> LoaderMetrics.P_USERS.equalsIgnoreCase(e.payload().tableName()))
 				.filter(e -> !"INSERT".equalsIgnoreCase(e.payload().operation()))
 				.toList();
 
@@ -86,13 +77,16 @@ public class LoadService {
 					});
 
 			Duration elapsed = Duration.between(startTime, LocalDateTime.now());
-			Timer.builder(BATCH_INSERT_DURATION)
+			Timer.builder(LoaderMetrics.Names.MYSQL_BATCH_INSERT_DURATION)
 					.description("MySQL batch insert duration")
-					.tag("module", MODULE)
-					.tag("table", "P_USERS")
+					.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+					.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
 					.register(meterRegistry)
 					.record(elapsed);
-			meterRegistry.counter(BATCH_INSERT_COUNT, "module", MODULE, "table", "P_USERS")
+			meterRegistry.counter(
+					LoaderMetrics.Names.MYSQL_BATCH_INSERT_COUNT,
+					LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
+					LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
 					.increment(insertEvents.size());
 		}
 
@@ -104,20 +98,20 @@ public class LoadService {
 	@Transactional
 	public void load(TransformEvent event) {
 		Timer.Sample sample = Timer.start(meterRegistry);
-		String status = "SUCCESS";
+		String status = LoaderMetrics.Status.SUCCESS;
 		String table = tableName(event);
 		String operation = operation(event);
 
 		try {
 			if (shouldSkip(event)) {
-				status = "SKIPPED";
+				status = LoaderMetrics.Status.SKIPPED;
 				log.debug("[LOAD][SKIP] table={}, operation={}, reason={}", table, operation, event.check().reason());
 				return;
 			}
 
 			RowPayload payload = event.payload();
-			if (!"P_USERS".equalsIgnoreCase(payload.tableName())) {
-				status = "SKIPPED";
+			if (!LoaderMetrics.P_USERS.equalsIgnoreCase(payload.tableName())) {
+				status = LoaderMetrics.Status.SKIPPED;
 				log.debug("[LOAD][SKIP] unsupported table={}", payload.tableName());
 				return;
 			}
@@ -127,24 +121,29 @@ public class LoadService {
 				case "UPDATE" -> updateUser(payload);
 				case "DELETE" -> deleteUser(payload);
 				default -> {
-					status = "SKIPPED";
+					status = LoaderMetrics.Status.SKIPPED;
 					log.debug("[LOAD][SKIP] unsupported operation={}", payload.operation());
 				}
 			}
 		}
 		catch (Exception ex) {
-			status = "FAILED";
+			status = LoaderMetrics.Status.FAILED;
 			throw ex;
 		}
 		finally {
-			meterRegistry.counter(LOAD_COUNT, "module", MODULE, "table", table, "operation", operation, "status", status)
+			meterRegistry.counter(
+					LoaderMetrics.Names.MYSQL_LOAD_COUNT,
+					LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
+					LoaderMetrics.Tags.TABLE, table,
+					LoaderMetrics.Tags.OPERATION, operation,
+					LoaderMetrics.Tags.STATUS, status)
 					.increment();
-			sample.stop(Timer.builder(LOAD_DURATION)
+			sample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_LOAD_DURATION)
 					.description("MySQL load duration")
-					.tag("module", MODULE)
-					.tag("table", table)
-					.tag("operation", operation)
-					.tag("status", status)
+					.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+					.tag(LoaderMetrics.Tags.TABLE, table)
+					.tag(LoaderMetrics.Tags.OPERATION, operation)
+					.tag(LoaderMetrics.Tags.STATUS, status)
 					.register(meterRegistry));
 		}
 	}
@@ -179,12 +178,16 @@ public class LoadService {
 				asLocalDateTime(data.get("CREATED_AT")),
 				asLocalDateTime(data.get("UPDATED_AT")));
 
-		sample.stop(Timer.builder(INSERT_DURATION)
+		sample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_INSERT_DURATION)
 				.description("MySQL direct insert duration")
-				.tag("module", MODULE)
-				.tag("table", "P_USERS")
+				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
 				.register(meterRegistry));
-		meterRegistry.counter(INSERT_COUNT, "module", MODULE, "table", "P_USERS", "status", "SUCCESS").increment();
+		meterRegistry.counter(
+				LoaderMetrics.Names.MYSQL_INSERT_COUNT,
+				LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
+				LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS,
+				LoaderMetrics.Tags.STATUS, LoaderMetrics.Status.SUCCESS).increment();
 		log.info("[LOAD][INSERT] table=P_USERS, id={}", id);
 	}
 
@@ -193,10 +196,10 @@ public class LoadService {
 		Timer.Sample findSample = Timer.start(meterRegistry);
 		User user = userRepository.findById(id)
 				.orElse(null);
-		findSample.stop(Timer.builder(UPDATE_FIND_DURATION)
+		findSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_UPDATE_FIND_DURATION)
 				.description("MySQL update path find duration")
-				.tag("module", MODULE)
-				.tag("table", "P_USERS")
+				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
 				.register(meterRegistry));
 		if (user == null) {
 			log.warn("[LOAD][SKIP] update target does not exist. table=P_USERS, id={}, columns={}",
@@ -214,10 +217,10 @@ public class LoadService {
 
 		Timer.Sample saveSample = Timer.start(meterRegistry);
 		userRepository.save(user);
-		saveSample.stop(Timer.builder(UPDATE_SAVE_DURATION)
+		saveSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_UPDATE_SAVE_DURATION)
 				.description("MySQL update path save duration")
-				.tag("module", MODULE)
-				.tag("table", "P_USERS")
+				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
 				.register(meterRegistry));
 		log.info("[LOAD][UPDATE] table=P_USERS, id={}", id);
 	}
@@ -226,10 +229,10 @@ public class LoadService {
 		Long id = asLong(payload.key().get("ID"));
 		Timer.Sample deleteSample = Timer.start(meterRegistry);
 		userRepository.deleteById(id);
-		deleteSample.stop(Timer.builder(DELETE_DURATION)
+		deleteSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_DELETE_DURATION)
 				.description("MySQL delete duration")
-				.tag("module", MODULE)
-				.tag("table", "P_USERS")
+				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
+				.tag(LoaderMetrics.Tags.TABLE, LoaderMetrics.P_USERS)
 				.register(meterRegistry));
 		log.info("[LOAD][DELETE] table=P_USERS, id={}", id);
 	}
@@ -277,7 +280,7 @@ public class LoadService {
 				return LocalDateTime.parse(stringValue, formatter);
 			}
 			catch (DateTimeParseException ignored) {
-				// try next format
+				// 다음 날짜 포맷 시도
 			}
 		}
 		throw new IllegalArgumentException("Unsupported timestamp format: " + stringValue);

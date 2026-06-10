@@ -12,6 +12,7 @@ import com.practice.datatransformer.oracle.RedoSqlParser;
 import com.practice.datatransformer.oracle.SourceRowKeyLookup;
 import com.practice.datatransformer.oracle.SourceTableMapping;
 import com.practice.datatransformer.oracle.SourceTableMappingRegistry;
+import com.practice.datatransformer.observability.TransformerMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -21,10 +22,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ValidationService {
 
-	private static final String MODULE = "data-transformer";
 	private static final Set<String> SUPPORTED_OPERATIONS = Set.of("INSERT", "UPDATE", "DELETE");
-	private static final String ROW_LOOKUP_DURATION = "data_transformer.oracle.row_lookup.duration";
-	private static final String ROW_LOOKUP_COUNT = "data_transformer.oracle.row_lookup.count";
 
 	private final RedoSqlParser redoSqlParser;
 	private final SourceRowKeyLookup sourceRowKeyLookup;
@@ -70,13 +68,17 @@ public class ValidationService {
 	private java.util.Optional<Long> findKey(SourceTableMapping mapping, String rowId, String operation) {
 		Timer.Sample sample = Timer.start(meterRegistry);
 		java.util.Optional<Long> keyValue = sourceRowKeyLookup.findKeyByRowId(mapping, rowId);
-		sample.stop(Timer.builder(ROW_LOOKUP_DURATION)
+		sample.stop(Timer.builder(TransformerMetrics.Names.ORACLE_ROW_LOOKUP_DURATION)
 				.description("Oracle row key lookup duration")
-				.tag("module", MODULE)
-				.tag("table", mapping.tableName())
-				.tag("operation", operation)
+				.tag(TransformerMetrics.Tags.MODULE, TransformerMetrics.MODULE)
+				.tag(TransformerMetrics.Tags.TABLE, mapping.tableName())
+				.tag(TransformerMetrics.Tags.OPERATION, operation)
 				.register(meterRegistry));
-		meterRegistry.counter(ROW_LOOKUP_COUNT, "module", MODULE, "table", mapping.tableName(), "operation", operation)
+		meterRegistry.counter(
+				TransformerMetrics.Names.ORACLE_ROW_LOOKUP_COUNT,
+				TransformerMetrics.Tags.MODULE, TransformerMetrics.MODULE,
+				TransformerMetrics.Tags.TABLE, mapping.tableName(),
+				TransformerMetrics.Tags.OPERATION, operation)
 				.increment();
 		return keyValue;
 	}
