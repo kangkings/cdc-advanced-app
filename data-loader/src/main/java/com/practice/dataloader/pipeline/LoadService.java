@@ -91,6 +91,10 @@ public class LoadService {
 					LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE,
 					LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 					.increment(insertEvents.size());
+			log.info("[LOAD][BATCH][DONE] table={}, operation=INSERT, batchSize={}, elapsedMs={}",
+					mapping.sourceTable(),
+					insertEvents.size(),
+					elapsed.toMillis());
 		}
 
 		for (TransformEvent event : otherEvents) {
