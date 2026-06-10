@@ -16,7 +16,7 @@ public class SourceTableMappingRegistry {
 
 	private final Map<String, SourceTableMapping> mappings;
 
-	// Loads configured table mappings once so runtime lookup stays simple and fast.
+	// 설정된 테이블 매핑을 한 번만 로드해 런타임 조회를 단순하게 유지한다.
 	public SourceTableMappingRegistry(SourceTableMappingProperties properties) {
 		this.mappings = properties.tables().stream()
 				.collect(Collectors.toUnmodifiableMap(
@@ -25,7 +25,7 @@ public class SourceTableMappingRegistry {
 		log.info("[SOURCE-TABLE-MAPPING][LOADED] count={}, tables={}", mappings.size(), mappings.keySet());
 	}
 
-	// Resolves configured source table metadata before validation and payload parsing.
+	// 검증과 payload 파싱 전에 설정된 원본 테이블 메타데이터를 찾는다.
 	public Optional<SourceTableMapping> find(String tableName) {
 		if (tableName == null || tableName.isBlank()) {
 			return Optional.empty();
