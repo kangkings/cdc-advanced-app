@@ -9,6 +9,7 @@ spring:
 cdc:
   kafka:
     input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-transform-events}
+    dlq-topic: ${CDC_KAFKA_DLQ_TOPIC:cdc-loader-dlq}
   loader:
     tables:
       - source-table: P_USERS

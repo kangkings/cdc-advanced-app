@@ -21,6 +21,8 @@ public final class LoaderMetrics {
 		public static final String MYSQL_UPDATE_FIND_DURATION = "data_loader.mysql.update.find.duration";
 		public static final String MYSQL_UPDATE_SAVE_DURATION = "data_loader.mysql.update.save.duration";
 		public static final String MYSQL_DELETE_DURATION = "data_loader.mysql.delete.duration";
+		public static final String FAILURE_COUNT = "data_loader.failure.count";
+		public static final String DLQ_PUBLISH_COUNT = "data_loader.dlq.publish.count";
 
 		private Names() {
 		}
@@ -32,6 +34,9 @@ public final class LoaderMetrics {
 		public static final String STATUS = "status";
 		public static final String TABLE = "table";
 		public static final String OPERATION = "operation";
+		public static final String TOPIC = "topic";
+		public static final String FAILURE_TYPE = "failureType";
+		public static final String RETRYABLE = "retryable";
 
 		private Tags() {
 		}
@@ -42,6 +47,7 @@ public final class LoaderMetrics {
 		public static final String SUCCESS = "SUCCESS";
 		public static final String FAILED = "FAILED";
 		public static final String SKIPPED = "SKIPPED";
+		public static final String DLQ = "DLQ";
 
 		private Status() {
 		}
