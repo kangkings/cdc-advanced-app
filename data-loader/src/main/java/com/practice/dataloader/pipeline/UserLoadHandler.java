@@ -14,6 +14,8 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import com.practice.dataloader.failure.FailureType;
+import com.practice.dataloader.failure.LoadNonRetryableException;
 import com.practice.dataloader.model.RowPayload;
 import com.practice.dataloader.model.TransformEvent;
 import com.practice.dataloader.mysql.User;
@@ -70,11 +72,20 @@ public class UserLoadHandler implements LoadHandler {
 		return supports(mapping);
 	}
 
+	// 사용자 payload의 key와 insert 필수 컬럼 검증
+	@Override
+	public void validate(RowPayload payload, LoaderTableMapping mapping) {
+		validateKey(payload, mapping);
+		if ("INSERT".equalsIgnoreCase(payload.operation())) {
+			validateRequiredInsertColumns(payload, mapping);
+		}
+	}
+
 	// 사용자 insert 이벤트를 MySQL 배치 insert로 적재
 	@Override
 	public void loadBatchInsert(List<TransformEvent> events, LoaderTableMapping mapping) {
 		List<TransformEvent> insertEvents = events.stream()
-				.filter(event -> hasRequiredInsertColumns(event.payload().data(), mapping))
+				.peek(event -> validate(event.payload(), mapping))
 				.toList();
 		if (insertEvents.isEmpty()) {
 			return;
@@ -122,20 +133,17 @@ public class UserLoadHandler implements LoadHandler {
 			case "INSERT" -> insertUser(payload, mapping);
 			case "UPDATE" -> updateUser(payload, mapping);
 			case "DELETE" -> deleteUser(payload, mapping);
-			default -> throw new IllegalArgumentException("Unsupported operation: " + payload.operation());
+			default -> throw nonRetryable(
+					FailureType.UNSUPPORTED_OPERATION,
+					"지원하지 않는 operation입니다",
+					context(payload, mapping));
 		}
 	}
 
 	private void insertUser(RowPayload payload, LoaderTableMapping mapping) {
-		Long id = asLong(payload.key().get(mapping.keyColumn()));
+		Long id = keyValue(payload, mapping);
 		Map<String, Object> data = payload.data();
-		if (!hasRequiredInsertColumns(data, mapping)) {
-			log.warn("[LOAD][SKIP] insert payload is missing required columns. table={}, id={}, columns={}",
-					mapping.sourceTable(),
-					id,
-					data == null ? null : data.keySet());
-			return;
-		}
+		validateRequiredInsertColumns(payload, mapping);
 
 		Timer.Sample sample = Timer.start(meterRegistry);
 		jdbcTemplate.update("""
@@ -163,7 +171,7 @@ public class UserLoadHandler implements LoadHandler {
 	}
 
 	private void updateUser(RowPayload payload, LoaderTableMapping mapping) {
-		Long id = asLong(payload.key().get(mapping.keyColumn()));
+		Long id = keyValue(payload, mapping);
 		Timer.Sample findSample = Timer.start(meterRegistry);
 		User user = userRepository.findById(id)
 				.orElse(null);
@@ -198,7 +206,7 @@ public class UserLoadHandler implements LoadHandler {
 	}
 
 	private void deleteUser(RowPayload payload, LoaderTableMapping mapping) {
-		Long id = asLong(payload.key().get(mapping.keyColumn()));
+		Long id = keyValue(payload, mapping);
 		Timer.Sample deleteSample = Timer.start(meterRegistry);
 		userRepository.deleteById(id);
 		deleteSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_DELETE_DURATION)
@@ -228,7 +236,15 @@ public class UserLoadHandler implements LoadHandler {
 		if (value instanceof Number number) {
 			return number.longValue();
 		}
-		return Long.parseLong(String.valueOf(value));
+		try {
+			return Long.parseLong(String.valueOf(value));
+		}
+		catch (NumberFormatException ex) {
+			throw nonRetryable(
+					FailureType.TYPE_CONVERSION_FAILED,
+					"숫자 형식으로 변환할 수 없습니다",
+					Map.of("value", String.valueOf(value)));
+		}
 	}
 
 	private String asString(Object value) {
@@ -251,7 +267,10 @@ public class UserLoadHandler implements LoadHandler {
 				// 다음 날짜 포맷 시도
 			}
 		}
-		throw new IllegalArgumentException("Unsupported timestamp format: " + stringValue);
+		throw nonRetryable(
+				FailureType.TIMESTAMP_PARSE_FAILED,
+				"timestamp 형식을 변환할 수 없습니다",
+				Map.of("value", stringValue));
 	}
 
 	private List<DateTimeFormatter> dateTimeFormatters() {
@@ -259,6 +278,41 @@ public class UserLoadHandler implements LoadHandler {
 				DateTimeFormatter.ISO_LOCAL_DATE_TIME,
 				DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.n]"),
 				ORACLE_LOGMINER_TIMESTAMP_FORMATTER);
+	}
+
+	private Long keyValue(RowPayload payload, LoaderTableMapping mapping) {
+		validateKey(payload, mapping);
+		return asLong(payload.key().get(mapping.keyColumn()));
+	}
+
+	private void validateKey(RowPayload payload, LoaderTableMapping mapping) {
+		if (payload.key() == null || !hasText(payload.key().get(mapping.keyColumn()))) {
+			throw nonRetryable(
+					FailureType.MISSING_KEY,
+					"payload key에 기준 컬럼이 없습니다",
+					context(payload, mapping));
+		}
+	}
+
+	private void validateRequiredInsertColumns(RowPayload payload, LoaderTableMapping mapping) {
+		if (!hasRequiredInsertColumns(payload.data(), mapping)) {
+			throw nonRetryable(
+					FailureType.MISSING_REQUIRED_FIELD,
+					"insert payload에 필수 컬럼이 없습니다",
+					context(payload, mapping));
+		}
+	}
+
+	private Map<String, String> context(RowPayload payload, LoaderTableMapping mapping) {
+		return Map.of(
+				"table", mapping.sourceTable(),
+				"operation", payload.operation() == null ? "UNKNOWN" : payload.operation(),
+				"keyColumn", mapping.keyColumn(),
+				"columns", payload.data() == null ? "UNKNOWN" : payload.data().keySet().toString());
+	}
+
+	private LoadNonRetryableException nonRetryable(FailureType failureType, String reason, Map<String, String> context) {
+		return new LoadNonRetryableException(failureType, reason, context);
 	}
 
 	@FunctionalInterface

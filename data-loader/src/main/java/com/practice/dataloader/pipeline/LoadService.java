@@ -2,6 +2,7 @@ package com.practice.dataloader.pipeline;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -11,6 +12,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.practice.dataloader.failure.FailureType;
+import com.practice.dataloader.failure.LoadNonRetryableException;
 import com.practice.dataloader.model.RowPayload;
 import com.practice.dataloader.model.TransformEvent;
 import com.practice.dataloader.observability.LoaderMetrics;
@@ -32,23 +35,24 @@ public class LoadService {
 	// 배치 이벤트를 적재 handler별로 라우팅하고 insert는 묶음 처리
 	@Transactional
 	public void loadBatch(List<TransformEvent> events) {
-		Map<LoadRoute, List<LoadTarget>> insertTargetsByRoute = events.stream()
-				.filter(e -> !shouldSkip(e))
-				.map(this::loadTarget)
-				.flatMap(Optional::stream)
+		List<LoadTarget> targets = events.stream()
+				.map(this::validate)
+				.toList();
+
+		Map<LoadRoute, List<LoadTarget>> insertTargetsByRoute = targets.stream()
 				.filter(target -> "INSERT".equalsIgnoreCase(target.event().payload().operation()))
 				.filter(target -> target.handler().supportsBatchInsert(target.mapping()))
 				.collect(Collectors.groupingBy(target -> new LoadRoute(target.mapping(), target.handler())));
 
-		insertTargetsByRoute.forEach((route, targets) -> route.handler().loadBatchInsert(
-				targets.stream()
+		insertTargetsByRoute.forEach((route, routeTargets) -> route.handler().loadBatchInsert(
+				routeTargets.stream()
 						.map(LoadTarget::event)
 						.toList(),
 				route.mapping()));
 
-		events.stream()
-				.filter(e -> !shouldSkip(e))
-				.filter(e -> !"INSERT".equalsIgnoreCase(e.payload().operation()))
+		targets.stream()
+				.filter(target -> !"INSERT".equalsIgnoreCase(target.event().payload().operation()))
+				.map(LoadTarget::event)
 				.forEach(this::load);
 	}
 
@@ -61,25 +65,12 @@ public class LoadService {
 		String operation = operation(event);
 
 		try {
-			if (shouldSkip(event)) {
-				status = LoaderMetrics.Status.SKIPPED;
-				log.debug("[LOAD][SKIP] table={}, operation={}, reason={}", table, operation, event.check().reason());
-				return;
-			}
-
-			LoadTarget target = loadTarget(event).orElse(null);
-			if (target == null) {
-				status = LoaderMetrics.Status.SKIPPED;
-				log.debug("[LOAD][SKIP] unsupported table={}", event.payload().tableName());
-				return;
-			}
-			if (!target.handler().supportsOperation(event.payload().operation())) {
-				status = LoaderMetrics.Status.SKIPPED;
-				log.debug("[LOAD][SKIP] unsupported operation={}", event.payload().operation());
-				return;
-			}
-
+			LoadTarget target = validate(event);
 			target.handler().load(event.payload(), target.mapping());
+		}
+		catch (LoadNonRetryableException ex) {
+			status = LoaderMetrics.Status.DLQ;
+			throw ex;
 		}
 		catch (Exception ex) {
 			status = LoaderMetrics.Status.FAILED;
@@ -90,13 +81,43 @@ public class LoadService {
 		}
 	}
 
-	// 적재기가 처리하지 않아야 할 이벤트 선별
-	private boolean shouldSkip(TransformEvent event) {
-		return event == null
-				|| event.check() == null
-				|| !event.check().valid()
-				|| !event.check().supported()
-				|| event.payload() == null;
+	// 적재 전 공통 검증과 handler 매칭 수행
+	public LoadTarget validate(TransformEvent event) {
+		if (event == null) {
+			throw nonRetryable(FailureType.UNKNOWN_LOAD_FAILED, "TransformEvent가 비어 있습니다", Map.of());
+		}
+		if (event.check() == null) {
+			throw nonRetryable(FailureType.UNKNOWN_LOAD_FAILED, "TransformEvent check가 비어 있습니다", eventContext(event));
+		}
+		if (!event.check().supported()) {
+			throw nonRetryable(
+					FailureType.UNSUPPORTED_TABLE,
+					"지원하지 않는 source table입니다",
+					eventContext(event));
+		}
+		if (!event.check().valid()) {
+			throw nonRetryable(
+					FailureType.UNKNOWN_LOAD_FAILED,
+					"유효하지 않은 TransformEvent입니다",
+					eventContext(event));
+		}
+		if (event.payload() == null) {
+			throw nonRetryable(FailureType.UNKNOWN_LOAD_FAILED, "TransformEvent payload가 비어 있습니다", eventContext(event));
+		}
+
+		LoadTarget target = loadTarget(event)
+				.orElseThrow(() -> nonRetryable(
+						FailureType.UNSUPPORTED_TABLE,
+						"지원하지 않는 source table입니다",
+						eventContext(event)));
+		if (!target.handler().supportsOperation(event.payload().operation())) {
+			throw nonRetryable(
+					FailureType.UNSUPPORTED_OPERATION,
+					"지원하지 않는 operation입니다",
+					eventContext(event));
+		}
+		target.handler().validate(event.payload(), target.mapping());
+		return target;
 	}
 
 	// 전달값에 맞는 테이블 매핑과 적재 처리기 선택
@@ -156,7 +177,23 @@ public class LoadService {
 		return event.payload().operation().toUpperCase(Locale.ROOT);
 	}
 
-	private record LoadTarget(
+	private Map<String, String> eventContext(TransformEvent event) {
+		Map<String, String> context = new HashMap<>();
+		context.put("table", tableName(event));
+		context.put("operation", operation(event));
+		context.put("scn", event == null || event.entry() == null ? "UNKNOWN" : String.valueOf(event.entry().scn()));
+		context.put("rowNumber", event == null || event.entry() == null ? "UNKNOWN" : String.valueOf(event.entry().rowNumber()));
+		if (event != null && event.check() != null && event.check().reason() != null) {
+			context.put("checkReason", event.check().reason());
+		}
+		return context;
+	}
+
+	private LoadNonRetryableException nonRetryable(FailureType failureType, String reason, Map<String, String> context) {
+		return new LoadNonRetryableException(failureType, reason, context);
+	}
+
+	public record LoadTarget(
 			TransformEvent event,
 			LoaderTableMapping mapping,
 			LoadHandler handler) {

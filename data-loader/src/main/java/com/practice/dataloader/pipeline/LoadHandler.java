@@ -13,6 +13,9 @@ public interface LoadHandler {
 
 	boolean supportsBatchInsert(LoaderTableMapping mapping);
 
+	default void validate(RowPayload payload, LoaderTableMapping mapping) {
+	}
+
 	void loadBatchInsert(List<TransformEvent> events, LoaderTableMapping mapping);
 
 	void load(RowPayload payload, LoaderTableMapping mapping);
