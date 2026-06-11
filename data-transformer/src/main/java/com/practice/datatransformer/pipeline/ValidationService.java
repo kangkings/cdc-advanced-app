@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
+// source row 존재 여부와 payload 파싱 검증
 public class ValidationService {
 
 	private static final Set<String> SUPPORTED_OPERATIONS = Set.of("INSERT", "UPDATE", "DELETE");

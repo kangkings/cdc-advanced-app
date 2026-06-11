@@ -26,6 +26,7 @@ import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
+// LogMiner 세션에서 redo log를 chunk 단위로 읽는 reader
 public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 
 	private final LogMinerConnectionFactory logMinerConnectionFactory;

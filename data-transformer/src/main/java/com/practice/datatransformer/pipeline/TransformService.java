@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
+// redo log 검증과 payload 변환 조합 처리
 public class TransformService {
 
 	private final ValidationService validationService;

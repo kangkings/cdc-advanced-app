@@ -25,6 +25,7 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+// transformer 이벤트 소비와 DLQ 분리 진입점
 public class TransformEventListener {
 
 	private final ObjectMapper objectMapper;

@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+// 요청 건수만큼 User 생성 Batch 실행
 public class UserService implements UserUsecase {
 
 	private final JobLauncher jobLauncher;

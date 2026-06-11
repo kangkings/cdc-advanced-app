@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+// TransformEvent 검증과 table handler 라우팅 처리
 public class LoadService {
 
 	private final LoaderTableMappingRegistry tableMappingRegistry;

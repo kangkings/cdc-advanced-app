@@ -22,6 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+// redo log 이벤트 소비와 변환 결과 발행 진입점
 public class RedoEntryListener {
 
 	private final ObjectMapper objectMapper;

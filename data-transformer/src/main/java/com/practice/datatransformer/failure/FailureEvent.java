@@ -3,6 +3,7 @@ package com.practice.datatransformer.failure;
 import java.time.Instant;
 import java.util.Map;
 
+// data-transformer DLQ로 발행할 공용 실패 이벤트
 public record FailureEvent(
 		String stage,
 		FailureType failureType,
@@ -15,6 +16,7 @@ public record FailureEvent(
 		String originalMessage,
 		Map<String, String> context) {
 
+	// data-transformer stage를 고정한 실패 이벤트 생성
 	public static FailureEvent of(
 			FailureType failureType,
 			boolean retryable,

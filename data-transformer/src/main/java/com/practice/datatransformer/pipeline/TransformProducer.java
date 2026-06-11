@@ -14,6 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
+// 변환 완료 이벤트 Kafka 발행 처리
 public class TransformProducer {
 
 	private final KafkaTemplate<String, String> kafkaTemplate;

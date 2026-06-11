@@ -22,6 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
+// redo log entry를 Kafka로 묶음 발행하는 writer
 public class RedoLogItemWriter implements ItemWriter<RedoLogEntry> {
 
 	private final KafkaTemplate<String, String> kafkaTemplate;

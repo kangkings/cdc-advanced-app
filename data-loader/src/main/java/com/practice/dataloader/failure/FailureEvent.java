@@ -3,6 +3,7 @@ package com.practice.dataloader.failure;
 import java.time.Instant;
 import java.util.Map;
 
+// data-loader DLQ로 발행할 공용 실패 이벤트
 public record FailureEvent(
 		String stage,
 		FailureType failureType,

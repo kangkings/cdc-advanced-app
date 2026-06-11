@@ -30,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+// P_USERS payload를 MySQL p_users에 적재하는 handler
 public class UserLoadHandler implements LoadHandler {
 
 	private static final String TARGET_TABLE = "p_users";

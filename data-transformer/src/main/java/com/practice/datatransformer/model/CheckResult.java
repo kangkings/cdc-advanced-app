@@ -1,5 +1,6 @@
 package com.practice.datatransformer.model;
 
+// source row 검증과 lookup 결과
 public record CheckResult(
 		boolean valid,
 		boolean supported,

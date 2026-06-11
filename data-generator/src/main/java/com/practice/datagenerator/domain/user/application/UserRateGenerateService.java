@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+// 초당 rate 기준 User 지속 생성 스케줄러
 public class UserRateGenerateService implements DisposableBean {
 
 	private static final String STATUS_IDLE = "IDLE";
