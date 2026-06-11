@@ -1,13 +1,16 @@
 spring:
+  # 애플리케이션 식별과 기본 실행 profile 설정
   application:
     name: data-generator
   profiles:
     active: local
 
+  # HTTP 요청으로 Batch를 직접 실행하기 위한 자동 실행 비활성화
   batch:
     job:
       enabled: false
 
+# Actuator와 Prometheus 수집 endpoint 노출 설정
 management:
   endpoints:
     web:

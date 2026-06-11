@@ -1,16 +1,20 @@
 server:
+  # data-transformer HTTP/actuator port
   port: 8081
 spring:
+  # 애플리케이션 식별과 기본 실행 profile 설정
   application:
     name: data-transformer
   profiles:
     active: local
 
 cdc:
+  # log-scanner 입력, loader 출력, transformer DLQ topic 설정
   kafka:
     input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-log-entries}
     output-topic: ${CDC_KAFKA_OUTPUT_TOPIC:cdc-transform-events}
     dlq-topic: ${CDC_KAFKA_DLQ_TOPIC:cdc-transformer-dlq}
+  # CDC 변환 대상 Oracle source table 매핑
   source:
     tables:
       - owner: DATA_GENERATOR
@@ -23,6 +27,7 @@ cdc:
           - CREATED_AT
           - UPDATED_AT
 
+# Actuator와 Prometheus 수집 endpoint 노출 설정
 management:
   endpoints:
     web:

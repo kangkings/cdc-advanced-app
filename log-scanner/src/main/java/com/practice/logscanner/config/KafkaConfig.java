@@ -26,17 +26,20 @@ import org.springframework.kafka.core.ProducerFactory;
 
 @EnableKafka
 @Configuration
+// log-scanner Kafka 연결과 producer Bean 구성
 public class KafkaConfig {
 
 	private static final Logger log = LoggerFactory.getLogger(KafkaConfig.class);
 
 	@Bean
+	// Kafka cluster 상태 조회용 AdminClient 생성
 	public AdminClient kafkaAdminClient(KafkaProperties kafkaProperties) {
 		return AdminClient.create(kafkaProperties.buildAdminProperties());
 	}
 
 	@Bean
 	@ConditionalOnProperty(prefix = "kafka.connection-check", name = "enabled", havingValue = "true")
+	// 설정 활성화 시 Kafka 연결 상태 로그 출력
 	public ApplicationRunner kafkaConnectionRunner(AdminClient kafkaAdminClient) {
 		return args -> {
 			DescribeClusterResult cluster = kafkaAdminClient.describeCluster();
@@ -48,6 +51,7 @@ public class KafkaConfig {
 	}
 
 	@Bean
+	// 문자열 key/value Kafka producer factory 생성
 	public ProducerFactory<String, String> producerFactory(KafkaProperties kafkaProperties) {
 		Map<String, Object> properties = kafkaProperties.buildProducerProperties();
 		properties.putIfAbsent(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -56,11 +60,13 @@ public class KafkaConfig {
 	}
 
 	@Bean
+	// redo log entry 발행용 KafkaTemplate 생성
 	public KafkaTemplate<String, String> kafkaTemplate(ProducerFactory<String, String> producerFactory) {
 		return new KafkaTemplate<>(producerFactory);
 	}
 
 	@Bean
+	// 문자열 key/value Kafka consumer factory 생성
 	public ConsumerFactory<String, String> consumerFactory(KafkaProperties kafkaProperties) {
 		Map<String, Object> properties = kafkaProperties.buildConsumerProperties();
 		properties.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
@@ -69,6 +75,7 @@ public class KafkaConfig {
 	}
 
 	@Bean
+	// Kafka listener 확장을 위한 기본 listener factory 생성
 	public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
 			ConsumerFactory<String, String> consumerFactory) {
 		ConcurrentKafkaListenerContainerFactory<String, String> factory =

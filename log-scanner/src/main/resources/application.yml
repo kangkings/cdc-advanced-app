@@ -1,28 +1,34 @@
 spring:
+  # 애플리케이션 식별과 기본 실행 profile 설정
   application:
     name: log-scanner
   profiles:
     active: local
 
+  # 스케줄러가 Job을 실행하므로 부팅 시 자동 실행 비활성화
   batch:
     job:
       enabled: false
 
+# LogMiner Batch 실행 옵션
 batch:
   redo-log-print:
     enabled: ${REDO_LOG_PRINT_BATCH_ENABLED:true}
     max-rows: ${REDO_LOG_PRINT_BATCH_MAX_ROWS:100}
 
+# LogMiner 세션 시작과 조회 대상 테이블 설정
 logminer:
   starter:
     enabled: ${LOGMINER_STARTER_ENABLED:false}
   targets:
     - P_USERS
 
+# redo log entry 발행 topic 설정
 cdc:
   kafka:
     topic: ${CDC_KAFKA_TOPIC:cdc-log-entries}
 
+# Actuator와 Prometheus 수집 endpoint 노출 설정
 management:
   health:
     db:
