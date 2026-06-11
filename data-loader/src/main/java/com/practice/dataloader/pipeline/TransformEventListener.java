@@ -42,12 +42,14 @@ public class TransformEventListener {
 		String status = LoaderMetrics.Status.SUCCESS;
 		try {
 			List<TransformEvent> validEvents = new ArrayList<>();
+			List<FailureCandidate> failureCandidates = new ArrayList<>();
 			for (ConsumerRecord<String, String> record : records) {
-				handleRecord(record, validEvents);
+				handleRecord(record, validEvents, failureCandidates);
 			}
 			if (!validEvents.isEmpty()) {
 				loadService.loadBatch(validEvents);
 			}
+			publishFailures(failureCandidates);
 		}
 		catch (Exception ex) {
 			status = LoaderMetrics.Status.FAILED;
@@ -68,15 +70,18 @@ public class TransformEventListener {
 		}
 	}
 
-	// 원본 메시지를 검증 가능한 TransformEvent로 변환하고 비재시도 실패는 DLQ 처리
-	private void handleRecord(ConsumerRecord<String, String> record, List<TransformEvent> validEvents) throws Exception {
+	// 원본 메시지를 검증하고 비재시도 실패는 DB 성공 이후 DLQ 후보로 보류
+	private void handleRecord(
+			ConsumerRecord<String, String> record,
+			List<TransformEvent> validEvents,
+			List<FailureCandidate> failureCandidates) {
 		try {
 			TransformEvent event = deserialize(record);
 			loadService.validate(event);
 			validEvents.add(event);
 		}
 		catch (LoadNonRetryableException ex) {
-			publishFailure(record, ex);
+			failureCandidates.add(new FailureCandidate(record, ex));
 		}
 	}
 
@@ -93,6 +98,13 @@ public class TransformEventListener {
 							"topic", record.topic(),
 							"partition", String.valueOf(record.partition()),
 							"offset", String.valueOf(record.offset())));
+		}
+	}
+
+	// DB write 성공 이후 보류된 비재시도 실패 DLQ 발행
+	private void publishFailures(List<FailureCandidate> failureCandidates) throws Exception {
+		for (FailureCandidate candidate : failureCandidates) {
+			publishFailure(candidate.record(), candidate.exception());
 		}
 	}
 
@@ -121,6 +133,11 @@ public class TransformEventListener {
 				record.topic(),
 				record.partition(),
 				record.offset());
+	}
+
+	private record FailureCandidate(
+			ConsumerRecord<String, String> record,
+			LoadNonRetryableException exception) {
 	}
 
 }

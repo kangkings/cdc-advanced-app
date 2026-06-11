@@ -1,15 +1,25 @@
 server:
+  # data-loader HTTP/actuator port
   port: 8082
 spring:
+  # 애플리케이션 식별과 기본 실행 profile 설정
   application:
     name: data-loader
   profiles:
     active: local
 
 cdc:
+  # transformer 결과 consume topic과 loader DLQ topic 설정
   kafka:
     input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-transform-events}
     dlq-topic: ${CDC_KAFKA_DLQ_TOPIC:cdc-loader-dlq}
+  # 일시 장애를 위한 bounded retry 정책
+  retry:
+    max-attempts: ${CDC_RETRY_MAX_ATTEMPTS:3}
+    initial-interval-ms: ${CDC_RETRY_INITIAL_INTERVAL_MS:1000}
+    multiplier: ${CDC_RETRY_MULTIPLIER:2.0}
+    max-interval-ms: ${CDC_RETRY_MAX_INTERVAL_MS:10000}
+  # CDC source table과 MySQL target table 적재 매핑
   loader:
     tables:
       - source-table: P_USERS
@@ -22,6 +32,7 @@ cdc:
           - CREATED_AT
           - UPDATED_AT
 
+# Actuator와 Prometheus 수집 endpoint 노출 설정
 management:
   endpoints:
     web:

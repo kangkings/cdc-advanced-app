@@ -19,6 +19,8 @@ public enum FailureType {
 	TIMESTAMP_PARSE_FAILED,
 	// MySQL 쓰기 실패
 	MYSQL_WRITE_FAILED,
+	// 재시도 횟수 소진
+	RETRY_EXHAUSTED,
 	// 분류되지 않은 적재 실패
 	UNKNOWN_LOAD_FAILED
 
