@@ -13,7 +13,7 @@ import com.practice.datatransformer.model.RowPayload;
 class RedoSqlParserTests {
 
 	private final RedoSqlParser parser = new RedoSqlParser();
-	private final TableRule rule = new TableRule(
+	private final SourceTableMapping rule = new SourceTableMapping(
 			"DATA_GENERATOR",
 			"P_USERS",
 			"ID",
