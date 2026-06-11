@@ -10,6 +10,7 @@ cdc:
   kafka:
     input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-log-entries}
     output-topic: ${CDC_KAFKA_OUTPUT_TOPIC:cdc-transform-events}
+    dlq-topic: ${CDC_KAFKA_DLQ_TOPIC:cdc-transformer-dlq}
   source:
     tables:
       - owner: DATA_GENERATOR
