@@ -20,6 +20,12 @@ batch:
 logminer:
   starter:
     enabled: ${LOGMINER_STARTER_ENABLED:false}
+  committed-data-only: ${LOGMINER_COMMITTED_DATA_ONLY:true}
+  max-scan-scn-range: ${LOGMINER_MAX_SCAN_SCN_RANGE:0}
+  transaction-diagnostics:
+    enabled: ${LOGMINER_TRANSACTION_DIAGNOSTICS_ENABLED:false}
+    max-logs: ${LOGMINER_TRANSACTION_DIAGNOSTICS_MAX_LOGS:20}
+    publish-enabled: ${LOGMINER_TRANSACTION_DIAGNOSTICS_PUBLISH_ENABLED:false}
   targets:
     - P_USERS
 

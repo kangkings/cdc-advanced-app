@@ -27,6 +27,8 @@ public final class LogScannerMetrics {
 		public static final String REDO_LOG_WRITER_CHUNK_COUNT = "log_scanner.redo_log.writer.chunk.count";
 		public static final String REDO_LOG_WRITER_ITEM_COUNT = "log_scanner.redo_log.writer.item.count";
 		public static final String REDO_LOG_WRITER_ERROR_COUNT = "log_scanner.redo_log.writer.error.count";
+		public static final String REDO_LOG_REGISTERED_COUNT = "log_scanner.redo_log.registered.count";
+		public static final String LOGMINER_START_FAILURE_COUNT = "log_scanner.logminer.start.failure.count";
 
 		private Names() {
 		}
@@ -39,6 +41,8 @@ public final class LogScannerMetrics {
 		public static final String STATUS = "status";
 		public static final String JOB = "job";
 		public static final String STEP = "step";
+		public static final String TYPE = "type";
+		public static final String ERROR = "error";
 
 		private Tags() {
 		}

@@ -18,7 +18,9 @@ import org.springframework.batch.infrastructure.item.ItemStreamException;
 import com.practice.logscanner.batch.model.RedoLogEntry;
 import com.practice.logscanner.logminer.LogMinerCheckpointRepository;
 import com.practice.logscanner.logminer.LogMinerConnectionFactory;
+import com.practice.logscanner.logminer.LogMinerTargetProperties;
 import com.practice.logscanner.logminer.RedoLogFileRegistrar;
+import com.practice.logscanner.logminer.RedoLogFileRegistrar.RedoLogFile;
 import com.practice.logscanner.observability.LogScannerMetrics;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -32,6 +34,7 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 	private final LogMinerConnectionFactory logMinerConnectionFactory;
 	private final LogMinerCheckpointRepository checkpointRepository;
 	private final RedoLogFileRegistrar redoLogFileRegistrar;
+	private final LogMinerTargetProperties logMinerTargetProperties;
 	private final List<String> targetTables;
 	private final MeterRegistry meterRegistry;
 
@@ -42,17 +45,21 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 	private LocalDateTime startTime;
 	private long startScn;
 	private long endScn;
+	private List<RedoLogFile> registeredRedoLogFiles = List.of();
+	private boolean logMinerStarted;
+	private int transactionDiagnosticLogCount;
 
 	public RedoLogItemReader(
 			LogMinerConnectionFactory logMinerConnectionFactory,
 			LogMinerCheckpointRepository checkpointRepository,
 			RedoLogFileRegistrar redoLogFileRegistrar,
-			List<String> targetTables,
+			LogMinerTargetProperties logMinerTargetProperties,
 			MeterRegistry meterRegistry) {
 		this.logMinerConnectionFactory = logMinerConnectionFactory;
 		this.checkpointRepository = checkpointRepository;
 		this.redoLogFileRegistrar = redoLogFileRegistrar;
-		this.targetTables = targetTables;
+		this.logMinerTargetProperties = logMinerTargetProperties;
+		this.targetTables = logMinerTargetProperties.targets();
 		this.meterRegistry = meterRegistry;
 	}
 
@@ -62,28 +69,31 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 			connection = logMinerConnectionFactory.getConnection();
 			connection.setAutoCommit(false);
 
-			endScn = checkpointRepository.loadCurrentScn(connection);
+			long currentScn = checkpointRepository.loadCurrentScn(connection);
 			long lastScn = checkpointRepository.loadLastScn();
 
 			// 첫 실행이면 현재 SCN부터 시작
-			startScn = lastScn == -1L ? endScn : lastScn;
+			startScn = lastScn == -1L ? currentScn : lastScn;
+			endScn = resolveEndScn(currentScn);
 
 			if (startScn >= endScn) {
 				log.debug("[REDO-LOG-PRINT][READER] 변경 없음. startScn={}, endScn={}", startScn, endScn);
 				return;
 			}
 
-			List<String> redoLogFiles = redoLogFileRegistrar.registerAll(connection);
+			registeredRedoLogFiles = redoLogFileRegistrar.registerAll(connection, startScn, endScn);
 			startLogMiner(connection, startScn, endScn);
+			logMinerStarted = true;
 			contentStatement = prepareContentStatement(connection);
 			contentResultSet = contentStatement.executeQuery();
 			startTime = LocalDateTime.now();
 
-			log.debug("[REDO-LOG-PRINT][READER][OPEN] startScn={}, endScn={}, targets={}, registeredRedoLogCount={}",
+			log.debug("[REDO-LOG-PRINT][READER][OPEN] startScn={}, endScn={}, currentScn={}, targets={}, registeredRedoLogCount={}",
 					startScn,
 					endScn,
+					currentScn,
 					targetTables,
-					redoLogFiles.size());
+					registeredRedoLogFiles.size());
 		}
 		catch (SQLException ex) {
 			close();
@@ -93,21 +103,31 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 
 	@Override
 	public RedoLogEntry read() throws Exception {
-		if (contentResultSet == null || !contentResultSet.next()) {
+		if (contentResultSet == null) {
 			return null;
 		}
 
-		rowNumber++;
-		return new RedoLogEntry(
-				rowNumber,
-				contentResultSet.getLong("scn"),
-				contentResultSet.getTimestamp("timestamp"),
-				contentResultSet.getString("operation"),
-				contentResultSet.getString("seg_owner"),
-				contentResultSet.getString("table_name"),
-				contentResultSet.getString("username"),
-				contentResultSet.getString("row_id"),
-				contentResultSet.getString("sql_redo"));
+		while (contentResultSet.next()) {
+			rowNumber++;
+			logTransactionDiagnostic(contentResultSet);
+			if (!isDmlOperation(contentResultSet.getString("operation"))) {
+				continue;
+			}
+			if (transactionDiagnosticsOnly()) {
+				continue;
+			}
+			return new RedoLogEntry(
+					rowNumber,
+					contentResultSet.getLong("scn"),
+					contentResultSet.getTimestamp("timestamp"),
+					contentResultSet.getString("operation"),
+					contentResultSet.getString("seg_owner"),
+					contentResultSet.getString("table_name"),
+					contentResultSet.getString("username"),
+					contentResultSet.getString("row_id"),
+					contentResultSet.getString("sql_redo"));
+		}
+		return null;
 	}
 
 	@Override
@@ -130,10 +150,12 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 		closeQuietly(contentStatement);
 		contentStatement = null;
 
-		endLogMinerQuietly(connectionToClose);
+		if (logMinerStarted) {
+			endLogMinerQuietly(connectionToClose);
+		}
 
-		// 체크포인트 갱신
-		if (endScn > startScn) {
+		// LogMiner 시작 성공 후 정상 close 시점의 체크포인트 갱신
+		if (logMinerStarted && endScn > startScn) {
 			try {
 				checkpointRepository.saveLastScn(endScn);
 			}
@@ -143,6 +165,7 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 		}
 
 		closeQuietly(connectionToClose);
+		logMinerStarted = false;
 
 		if (startTime != null) {
 			Duration elapsed = Duration.between(startTime, LocalDateTime.now());
@@ -168,11 +191,28 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 					    STARTSCN => %d,
 					    ENDSCN   => %d,
 					    OPTIONS  => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG
-					             + DBMS_LOGMNR.COMMITTED_DATA_ONLY
+					             %s
 					             + DBMS_LOGMNR.PRINT_PRETTY_SQL
 					  );
 					END;
-					""".formatted(startScn, endScn));
+					""".formatted(startScn, endScn, committedDataOnlyOption()));
+		}
+		catch (SQLException ex) {
+			String error = ex.getErrorCode() == 1291 ? "ORA-01291" : "UNKNOWN";
+			meterRegistry.counter(
+					LogScannerMetrics.Names.LOGMINER_START_FAILURE_COUNT,
+					LogScannerMetrics.Tags.MODULE, LogScannerMetrics.MODULE,
+					LogScannerMetrics.Tags.ERROR, error).increment();
+			log.error("[LOGMINER][START-FAILED] startScn={}, endScn={}, error={}, registeredCount={}, onlineCount={}, archivedCount={}, files={}",
+					startScn,
+					endScn,
+					error,
+					registeredRedoLogFiles.size(),
+					registeredRedoLogFiles.stream().filter(RedoLogFile::online).count(),
+					registeredRedoLogFiles.stream().filter(RedoLogFile::archived).count(),
+					registeredRedoLogFiles,
+					ex);
+			throw ex;
 		}
 	}
 
@@ -182,14 +222,71 @@ public class RedoLogItemReader implements ItemReader<RedoLogEntry>, ItemStream {
 				.collect(Collectors.joining(", "));
 
 		String sql = """
-				SELECT scn, timestamp, operation, seg_owner, table_name, username, row_id, sql_redo
+				SELECT scn, timestamp, operation, operation_code, seg_owner, table_name, username,
+				       row_id, sql_redo, xid, xidusn, xidslt, xidsqn, rs_id, ssn
 				FROM v$logmnr_contents
-				WHERE operation IN ('INSERT', 'UPDATE', 'DELETE')
-				AND table_name IN (%s)
+				WHERE operation IN (%s)
+				AND (table_name IN (%s) OR operation IN ('COMMIT', 'ROLLBACK'))
 				ORDER BY scn
-				""".formatted(tableFilter);
+				""".formatted(operationFilter(), tableFilter);
 
 		return connection.prepareStatement(sql);
+	}
+
+	private String committedDataOnlyOption() {
+		if (!logMinerTargetProperties.committedDataOnly()) {
+			return "";
+		}
+		return "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY";
+	}
+
+	private long resolveEndScn(long currentScn) {
+		long maxScanScnRange = logMinerTargetProperties.maxScanScnRange();
+		if (maxScanScnRange <= 0 || startScn == -1L) {
+			return currentScn;
+		}
+		long limitedEndScn = startScn + maxScanScnRange;
+		if (limitedEndScn < startScn) {
+			return currentScn;
+		}
+		return Math.min(currentScn, limitedEndScn);
+	}
+
+	private String operationFilter() {
+		if (!logMinerTargetProperties.transactionDiagnostics().enabled()) {
+			return "'INSERT', 'UPDATE', 'DELETE'";
+		}
+		return "'INSERT', 'UPDATE', 'DELETE', 'COMMIT', 'ROLLBACK'";
+	}
+
+	private boolean isDmlOperation(String operation) {
+		return "INSERT".equals(operation) || "UPDATE".equals(operation) || "DELETE".equals(operation);
+	}
+
+	private boolean transactionDiagnosticsOnly() {
+		LogMinerTargetProperties.TransactionDiagnostics diagnostics = logMinerTargetProperties.transactionDiagnostics();
+		return diagnostics.enabled() && !diagnostics.publishEnabled();
+	}
+
+	private void logTransactionDiagnostic(ResultSet resultSet) throws SQLException {
+		LogMinerTargetProperties.TransactionDiagnostics diagnostics = logMinerTargetProperties.transactionDiagnostics();
+		if (!diagnostics.enabled() || transactionDiagnosticLogCount >= diagnostics.maxLogs()) {
+			return;
+		}
+		transactionDiagnosticLogCount++;
+		log.info("[LOGMINER][TX-DIAG] scn={}, operation={}, operationCode={}, xid={}, xidusn={}, xidslt={}, xidsqn={}, rsId={}, ssn={}, owner={}, table={}, rowId={}",
+				resultSet.getLong("scn"),
+				resultSet.getString("operation"),
+				resultSet.getString("operation_code"),
+				resultSet.getString("xid"),
+				resultSet.getString("xidusn"),
+				resultSet.getString("xidslt"),
+				resultSet.getString("xidsqn"),
+				resultSet.getString("rs_id"),
+				resultSet.getString("ssn"),
+				resultSet.getString("seg_owner"),
+				resultSet.getString("table_name"),
+				resultSet.getString("row_id"));
 	}
 
 	private void endLogMinerQuietly(Connection connection) {

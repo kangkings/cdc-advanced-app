@@ -11,6 +11,8 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
+import com.practice.logscanner.logminer.RedoLogFileRegistrar.RedoLogFile;
+
 import lombok.extern.slf4j.Slf4j;
 
 @Component
@@ -42,7 +44,7 @@ public class LogMinerStarter implements ApplicationRunner, DisposableBean {
 
 		connection = logMinerConnectionFactory.getConnection();
 
-		List<String> redoLogFiles = redoLogFileRegistrar.registerAll(connection);
+		List<RedoLogFile> redoLogFiles = redoLogFileRegistrar.registerAll(connection);
 		startLogMiner(connection);
 		started = true;
 

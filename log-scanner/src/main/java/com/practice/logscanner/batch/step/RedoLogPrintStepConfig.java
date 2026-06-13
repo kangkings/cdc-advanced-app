@@ -55,7 +55,7 @@ public class RedoLogPrintStepConfig {
 				logMinerConnectionFactory,
 				checkpointRepository,
 				redoLogFileRegistrar,
-				logMinerTargetProperties.targets(),
+				logMinerTargetProperties,
 				meterRegistry);
 	}
 
