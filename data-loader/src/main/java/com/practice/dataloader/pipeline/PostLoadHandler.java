@@ -29,16 +29,17 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-// P_USERS payload를 MySQL p_users에 적재하는 handler
-public class UserLoadHandler implements LoadHandler {
+// P_POST payload를 MySQL p_post에 적재하는 handler
+public class PostLoadHandler implements LoadHandler {
 
-	private static final String TARGET_TABLE = "p_users";
-	private static final String NAME = "NAME";
-	private static final String EMAIL = "EMAIL";
+	private static final String TARGET_TABLE = "p_post";
+	private static final String USER_ID = "USER_ID";
+	private static final String TITLE = "TITLE";
+	private static final String CONTENT = "CONTENT";
 	private static final String STATUS = "STATUS";
 	private static final String CREATED_AT = "CREATED_AT";
 	private static final String UPDATED_AT = "UPDATED_AT";
-	private static final List<String> UPDATE_COLUMNS = List.of(NAME, EMAIL, STATUS, CREATED_AT, UPDATED_AT);
+	private static final List<String> UPDATE_COLUMNS = List.of(USER_ID, TITLE, CONTENT, STATUS, CREATED_AT, UPDATED_AT);
 	private static final DateTimeFormatter ORACLE_LOGMINER_TIMESTAMP_FORMATTER = new DateTimeFormatterBuilder()
 			.appendPattern("yy/MM/dd HH:mm:ss")
 			.optionalStart()
@@ -49,13 +50,13 @@ public class UserLoadHandler implements LoadHandler {
 	private final JdbcTemplate jdbcTemplate;
 	private final MeterRegistry meterRegistry;
 
-	// 사용자 대상 테이블 매핑 처리 여부 확인
+	// 게시글 대상 테이블 매핑 처리 여부 확인
 	@Override
 	public boolean supports(LoaderTableMapping mapping) {
 		return mapping != null && TARGET_TABLE.equalsIgnoreCase(mapping.targetTable());
 	}
 
-	// 사용자 처리기가 지원하는 CDC 작업 확인
+	// 게시글 처리기가 지원하는 CDC 작업 확인
 	@Override
 	public boolean supportsOperation(String operation) {
 		if (operation == null) {
@@ -72,16 +73,17 @@ public class UserLoadHandler implements LoadHandler {
 		return supports(mapping);
 	}
 
-	// 사용자 payload의 key와 insert 필수 컬럼 검증
+	// 게시글 payload의 key와 insert 필수 컬럼 검증
 	@Override
 	public void validate(RowPayload payload, LoaderTableMapping mapping) {
 		validateKey(payload, mapping);
 		if ("INSERT".equalsIgnoreCase(payload.operation())) {
 			validateRequiredInsertColumns(payload, mapping);
+			validateParentExists(payload, mapping);
 		}
 	}
 
-	// 사용자 insert 이벤트를 MySQL 배치 insert로 적재
+	// 게시글 insert 이벤트를 MySQL 배치 insert로 적재
 	@Override
 	public void loadBatchInsert(List<TransformEvent> events, LoaderTableMapping mapping) {
 		List<TransformEvent> insertEvents = events.stream()
@@ -92,20 +94,22 @@ public class UserLoadHandler implements LoadHandler {
 		}
 
 		LocalDateTime startTime = LocalDateTime.now();
+		insertEvents.forEach(event -> logParentState(event.payload(), mapping));
 		jdbcTemplate.batchUpdate("""
-				INSERT INTO p_users (id, name, email, status, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?)
+				INSERT INTO p_post (id, user_id, title, content, status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
 				""",
 				insertEvents,
 				insertEvents.size(),
 				(ps, event) -> {
 					Map<String, Object> data = event.payload().data();
 					ps.setLong(1, asLong(event.payload().key().get(mapping.keyColumn())));
-					ps.setString(2, asString(data.get(NAME)));
-					ps.setString(3, asString(data.get(EMAIL)));
-					ps.setString(4, asString(data.get(STATUS)));
-					ps.setObject(5, asLocalDateTime(data.get(CREATED_AT)));
-					ps.setObject(6, asLocalDateTime(data.get(UPDATED_AT)));
+					ps.setLong(2, asLong(data.get(USER_ID)));
+					ps.setString(3, asString(data.get(TITLE)));
+					ps.setString(4, asString(data.get(CONTENT)));
+					ps.setString(5, asString(data.get(STATUS)));
+					ps.setObject(6, asLocalDateTime(data.get(CREATED_AT)));
+					ps.setObject(7, asLocalDateTime(data.get(UPDATED_AT)));
 				});
 
 		Duration elapsed = Duration.between(startTime, LocalDateTime.now());
@@ -126,13 +130,13 @@ public class UserLoadHandler implements LoadHandler {
 				elapsed.toMillis());
 	}
 
-	// 사용자 단건 INSERT/UPDATE/DELETE 분기 처리
+	// 게시글 단건 INSERT/UPDATE/DELETE 분기 처리
 	@Override
 	public void load(RowPayload payload, LoaderTableMapping mapping) {
 		switch (payload.operation().toUpperCase(Locale.ROOT)) {
-			case "INSERT" -> insertUser(payload, mapping);
-			case "UPDATE" -> updateUser(payload, mapping);
-			case "DELETE" -> deleteUser(payload, mapping);
+			case "INSERT" -> insertPost(payload, mapping);
+			case "UPDATE" -> updatePost(payload, mapping);
+			case "DELETE" -> deletePost(payload, mapping);
 			default -> throw nonRetryable(
 					FailureType.UNSUPPORTED_OPERATION,
 					"지원하지 않는 operation입니다",
@@ -140,19 +144,21 @@ public class UserLoadHandler implements LoadHandler {
 		}
 	}
 
-	private void insertUser(RowPayload payload, LoaderTableMapping mapping) {
+	private void insertPost(RowPayload payload, LoaderTableMapping mapping) {
 		Long id = keyValue(payload, mapping);
 		Map<String, Object> data = payload.data();
 		validateRequiredInsertColumns(payload, mapping);
+		validateParentExists(payload, mapping);
 
 		Timer.Sample sample = Timer.start(meterRegistry);
 		jdbcTemplate.update("""
-				INSERT INTO p_users (id, name, email, status, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?)
+				INSERT INTO p_post (id, user_id, title, content, status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
 				""",
 				id,
-				asString(data.get(NAME)),
-				asString(data.get(EMAIL)),
+				asLong(data.get(USER_ID)),
+				asString(data.get(TITLE)),
+				asString(data.get(CONTENT)),
 				asString(data.get(STATUS)),
 				asLocalDateTime(data.get(CREATED_AT)),
 				asLocalDateTime(data.get(UPDATED_AT)));
@@ -170,7 +176,7 @@ public class UserLoadHandler implements LoadHandler {
 		log.info("[LOAD][INSERT] table={}, id={}", mapping.sourceTable(), id);
 	}
 
-	private void updateUser(RowPayload payload, LoaderTableMapping mapping) {
+	private void updatePost(RowPayload payload, LoaderTableMapping mapping) {
 		Long id = keyValue(payload, mapping);
 		UpdateStatement statement = updateStatement(payload.data(), mapping, id);
 
@@ -184,16 +190,57 @@ public class UserLoadHandler implements LoadHandler {
 		log.info("[LOAD][UPDATE] table={}, id={}, affectedRows={}", mapping.sourceTable(), id, updated);
 	}
 
-	private void deleteUser(RowPayload payload, LoaderTableMapping mapping) {
+	private void deletePost(RowPayload payload, LoaderTableMapping mapping) {
 		Long id = keyValue(payload, mapping);
-		Timer.Sample deleteSample = Timer.start(meterRegistry);
-		int deleted = jdbcTemplate.update("DELETE FROM p_users WHERE id = ?", id);
-		deleteSample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_DELETE_DURATION)
+		Timer.Sample sample = Timer.start(meterRegistry);
+		int deleted = jdbcTemplate.update("DELETE FROM p_post WHERE id = ?", id);
+		sample.stop(Timer.builder(LoaderMetrics.Names.MYSQL_DELETE_DURATION)
 				.description("MySQL delete duration")
 				.tag(LoaderMetrics.Tags.MODULE, LoaderMetrics.MODULE)
 				.tag(LoaderMetrics.Tags.TABLE, mapping.sourceTable())
 				.register(meterRegistry));
 		log.info("[LOAD][DELETE] table={}, id={}, affectedRows={}", mapping.sourceTable(), id, deleted);
+	}
+
+	// 부모 사용자 존재 여부를 확인해 없는 자식 row 적재 차단
+	private void validateParentExists(RowPayload payload, LoaderTableMapping mapping) {
+		Map<String, Object> data = payload.data();
+		if (data == null || !hasText(data.get(USER_ID))) {
+			return;
+		}
+		Long userId = asLong(data.get(USER_ID));
+		if (!parentExists(userId)) {
+			throw nonRetryable(
+					FailureType.PARENT_ROW_NOT_FOUND,
+					"부모 P_USERS row가 없어 P_POST 적재를 보류해야 합니다",
+					Map.of(
+							"table", mapping.sourceTable(),
+							"operation", payload.operation(),
+							"userId", String.valueOf(userId)));
+		}
+		logParentState(mapping, userId, true);
+	}
+
+	// 부모 사용자 존재 여부를 로그로 남기는 임시 관찰
+	private void logParentState(RowPayload payload, LoaderTableMapping mapping) {
+		Map<String, Object> data = payload.data();
+		if (data == null || !hasText(data.get(USER_ID))) {
+			return;
+		}
+		Long userId = asLong(data.get(USER_ID));
+		logParentState(mapping, userId, parentExists(userId));
+	}
+
+	private boolean parentExists(Long userId) {
+		Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM p_users WHERE id = ?", Integer.class, userId);
+		return count != null && count > 0;
+	}
+
+	private void logParentState(LoaderTableMapping mapping, Long userId, boolean exists) {
+		log.info("[LOAD][PARENT][CHECK] table={}, parentTable=P_USERS, userId={}, exists={}",
+				mapping.sourceTable(),
+				userId,
+				exists);
 	}
 
 	// 변경 컬럼만 SET 절에 포함해 불필요한 null 덮어쓰기 방지
@@ -220,13 +267,14 @@ public class UserLoadHandler implements LoadHandler {
 					Map.of("table", mapping.sourceTable(), "operation", "UPDATE", "columns", data.keySet().toString()));
 		}
 		params.add(id);
-		return new UpdateStatement("UPDATE p_users SET %s WHERE id = ?".formatted(String.join(", ", assignments)), params);
+		return new UpdateStatement("UPDATE p_post SET %s WHERE id = ?".formatted(String.join(", ", assignments)), params);
 	}
 
 	private String mysqlColumn(String sourceColumn) {
 		return switch (sourceColumn) {
-			case NAME -> "name";
-			case EMAIL -> "email";
+			case USER_ID -> "user_id";
+			case TITLE -> "title";
+			case CONTENT -> "content";
 			case STATUS -> "status";
 			case CREATED_AT -> "created_at";
 			case UPDATED_AT -> "updated_at";
@@ -240,6 +288,9 @@ public class UserLoadHandler implements LoadHandler {
 	private Object mysqlValue(String sourceColumn, Object value) {
 		if (CREATED_AT.equals(sourceColumn) || UPDATED_AT.equals(sourceColumn)) {
 			return asLocalDateTime(value);
+		}
+		if (USER_ID.equals(sourceColumn)) {
+			return asLong(value);
 		}
 		return asString(value);
 	}
@@ -272,7 +323,7 @@ public class UserLoadHandler implements LoadHandler {
 		return value == null ? null : String.valueOf(value);
 	}
 
-	LocalDateTime asLocalDateTime(Object value) {
+	private LocalDateTime asLocalDateTime(Object value) {
 		if (value instanceof LocalDateTime localDateTime) {
 			return localDateTime;
 		}

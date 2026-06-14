@@ -31,6 +31,16 @@ cdc:
           - STATUS
           - CREATED_AT
           - UPDATED_AT
+      - source-table: P_POST
+        target-table: p_post
+        key-column: ID
+        required-insert-columns:
+          - USER_ID
+          - TITLE
+          - CONTENT
+          - STATUS
+          - CREATED_AT
+          - UPDATED_AT
 
 # Actuator와 Prometheus 수집 endpoint 노출 설정
 management:

@@ -17,6 +17,8 @@ public enum FailureType {
 	TYPE_CONVERSION_FAILED,
 	// timestamp 변환 실패
 	TIMESTAMP_PARSE_FAILED,
+	// 연관 부모 row 미존재
+	PARENT_ROW_NOT_FOUND,
 	// MySQL 쓰기 실패
 	MYSQL_WRITE_FAILED,
 	// 재시도 횟수 소진

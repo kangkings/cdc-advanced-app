@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 class UserLoadHandlerTests {
 
-	private final UserLoadHandler userLoadHandler = new UserLoadHandler(null, null, null);
+	private final UserLoadHandler userLoadHandler = new UserLoadHandler(null, null);
 
 	@Test
 	void asLocalDateTimeParsesIsoTimestampFromTransformer() {

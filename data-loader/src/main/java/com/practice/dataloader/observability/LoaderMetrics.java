@@ -18,8 +18,7 @@ public final class LoaderMetrics {
 		public static final String MYSQL_INSERT_COUNT = "data_loader.mysql.insert.count";
 		public static final String MYSQL_BATCH_INSERT_DURATION = "data_loader.mysql.batch.insert.duration";
 		public static final String MYSQL_BATCH_INSERT_COUNT = "data_loader.mysql.batch.insert.count";
-		public static final String MYSQL_UPDATE_FIND_DURATION = "data_loader.mysql.update.find.duration";
-		public static final String MYSQL_UPDATE_SAVE_DURATION = "data_loader.mysql.update.save.duration";
+		public static final String MYSQL_UPDATE_DURATION = "data_loader.mysql.update.duration";
 		public static final String MYSQL_DELETE_DURATION = "data_loader.mysql.delete.duration";
 		public static final String FAILURE_COUNT = "data_loader.failure.count";
 		public static final String DLQ_PUBLISH_COUNT = "data_loader.dlq.publish.count";
