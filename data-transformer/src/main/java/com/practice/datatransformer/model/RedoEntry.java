@@ -8,9 +8,16 @@ public record RedoEntry(
 		long scn,
 		Timestamp timestamp,
 		String operation,
+		Integer operationCode,
 		String owner,
 		String tableName,
 		String username,
 		String rowId,
-		String sqlRedo) {
+		String sqlRedo,
+		String xid,
+		Long xidusn,
+		Long xidslt,
+		Long xidsqn,
+		String rsId,
+		Long ssn) {
 }

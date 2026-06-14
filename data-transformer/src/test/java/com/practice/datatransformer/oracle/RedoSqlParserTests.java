@@ -26,6 +26,7 @@ class RedoSqlParserTests {
 				2692618L,
 				Timestamp.valueOf("2026-06-07 03:21:02"),
 				"INSERT",
+				1,
 				"DATA_GENERATOR",
 				"P_USERS",
 				"DATA_GENERATOR",
@@ -39,7 +40,13 @@ class RedoSqlParserTests {
 						    "STATUS" = 'ACTIVE',
 						    "CREATED_AT" = '26/06/07 03:21:02.108861',
 						    "UPDATED_AT" = '26/06/07 03:21:02.108861';
-						""");
+						""",
+				"09000500EA080000",
+				9L,
+				5L,
+				2282L,
+				"0x000230.00001006.0010",
+				29L);
 
 		RowPayload payload = parser.parsePayload(entry, rule, 213387L);
 
