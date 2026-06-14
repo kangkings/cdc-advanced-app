@@ -28,7 +28,18 @@ public final class LogScannerMetrics {
 		public static final String REDO_LOG_WRITER_ITEM_COUNT = "log_scanner.redo_log.writer.item.count";
 		public static final String REDO_LOG_WRITER_ERROR_COUNT = "log_scanner.redo_log.writer.error.count";
 		public static final String REDO_LOG_REGISTERED_COUNT = "log_scanner.redo_log.registered.count";
+		public static final String REDO_LOG_SCAN_WINDOW_COUNT = "log_scanner.redo_log.scan.window.count";
+		public static final String REDO_LOG_SCAN_WINDOW_SCN_RANGE = "log_scanner.redo_log.scan.window.scn.range";
+		public static final String REDO_LOG_SCAN_ENTRY_COUNT = "log_scanner.redo_log.scan.entry.count";
+		public static final String CHECKPOINT_SAVE_COUNT = "log_scanner.checkpoint.save.count";
 		public static final String LOGMINER_START_FAILURE_COUNT = "log_scanner.logminer.start.failure.count";
+		public static final String PENDING_TRANSACTION_EVENT_COUNT = "log_scanner.pending_transaction.event.count";
+		public static final String PENDING_TRANSACTION_SAVE_DURATION = "log_scanner.pending_transaction.save.duration";
+		public static final String PENDING_TRANSACTION_COMMIT_DURATION = "log_scanner.pending_transaction.commit.duration";
+		public static final String PENDING_TRANSACTION_ROLLBACK_DURATION = "log_scanner.pending_transaction.rollback.duration";
+		public static final String PENDING_TRANSACTION_FIND_DURATION = "log_scanner.pending_transaction.find.duration";
+		public static final String PENDING_TRANSACTION_DELETE_DURATION = "log_scanner.pending_transaction.delete.duration";
+		public static final String PENDING_TRANSACTION_CONTROL_SKIP_COUNT = "log_scanner.pending_transaction.control.skip.count";
 
 		private Names() {
 		}

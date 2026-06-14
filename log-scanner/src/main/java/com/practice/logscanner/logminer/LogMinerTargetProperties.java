@@ -10,15 +10,16 @@ public record LogMinerTargetProperties(
 		List<String> targets,
 		boolean committedDataOnly,
 		long maxScanScnRange,
+		long endScnSafetyMargin,
 		TransactionDiagnostics transactionDiagnostics) {
 
 	public LogMinerTargetProperties {
 		if (transactionDiagnostics == null) {
-			transactionDiagnostics = new TransactionDiagnostics(false, 20, false);
+			transactionDiagnostics = new TransactionDiagnostics(false, 20, false, false);
 		}
 	}
 
 	// LogMiner transaction 컬럼 관측용 설정
-	public record TransactionDiagnostics(boolean enabled, int maxLogs, boolean publishEnabled) {
+	public record TransactionDiagnostics(boolean enabled, int maxLogs, boolean publishEnabled, boolean logAllControls) {
 	}
 }

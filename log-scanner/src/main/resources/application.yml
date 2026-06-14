@@ -22,10 +22,13 @@ logminer:
     enabled: ${LOGMINER_STARTER_ENABLED:false}
   committed-data-only: ${LOGMINER_COMMITTED_DATA_ONLY:true}
   max-scan-scn-range: ${LOGMINER_MAX_SCAN_SCN_RANGE:0}
+  # current_scn 직전 안정 구간까지만 스캔하기 위한 SCN 여유폭
+  end-scn-safety-margin: ${LOGMINER_END_SCN_SAFETY_MARGIN:1000}
   transaction-diagnostics:
     enabled: ${LOGMINER_TRANSACTION_DIAGNOSTICS_ENABLED:false}
     max-logs: ${LOGMINER_TRANSACTION_DIAGNOSTICS_MAX_LOGS:20}
     publish-enabled: ${LOGMINER_TRANSACTION_DIAGNOSTICS_PUBLISH_ENABLED:false}
+    log-all-controls: ${LOGMINER_TRANSACTION_DIAGNOSTICS_LOG_ALL_CONTROLS:false}
   targets:
     - P_USERS
 
