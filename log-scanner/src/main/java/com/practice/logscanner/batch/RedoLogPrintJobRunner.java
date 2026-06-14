@@ -43,8 +43,8 @@ public class RedoLogPrintJobRunner implements ApplicationRunner, DisposableBean 
 			return;
 		}
 
-		log.info("[REDO-LOG-PRINT] 5초 간격 로그 수집 시작.");
-		scheduler.scheduleAtFixedRate(this::runBatch, 0, 5, TimeUnit.SECONDS);
+		log.info("[REDO-LOG-PRINT] 3초 간격 로그 수집 시작.");
+		scheduler.scheduleAtFixedRate(this::runBatch, 0, 3, TimeUnit.SECONDS);
 	}
 
 	private void runBatch() {

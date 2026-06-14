@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import com.practice.logscanner.batch.model.RedoLogEntry;
 import com.practice.logscanner.observability.LogScannerMetrics;
+import com.practice.logscanner.routing.RoutingKeyResolver;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -28,16 +29,19 @@ public class RedoLogItemWriter implements ItemWriter<RedoLogEntry> {
 	private final KafkaTemplate<String, String> kafkaTemplate;
 	private final ObjectMapper objectMapper;
 	private final MeterRegistry meterRegistry;
+	private final RoutingKeyResolver routingKeyResolver;
 	private final String topic;
 
 	public RedoLogItemWriter(
 			KafkaTemplate<String, String> kafkaTemplate,
 			ObjectMapper objectMapper,
 			MeterRegistry meterRegistry,
+			RoutingKeyResolver routingKeyResolver,
 			@Value("${cdc.kafka.topic}") String topic) {
 		this.kafkaTemplate = kafkaTemplate;
 		this.objectMapper = objectMapper;
 		this.meterRegistry = meterRegistry;
+		this.routingKeyResolver = routingKeyResolver;
 		this.topic = topic;
 	}
 
@@ -89,7 +93,7 @@ public class RedoLogItemWriter implements ItemWriter<RedoLogEntry> {
 	}
 
 	private String createKey(RedoLogEntry entry) {
-		return "%d:%d".formatted(entry.scn(), entry.rowNumber());
+		return routingKeyResolver.resolve(entry);
 	}
 
 	private void handleSendResult(

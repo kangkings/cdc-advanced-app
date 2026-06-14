@@ -14,7 +14,7 @@ spring:
 batch:
   redo-log-print:
     enabled: ${REDO_LOG_PRINT_BATCH_ENABLED:true}
-    max-rows: ${REDO_LOG_PRINT_BATCH_MAX_ROWS:100}
+    max-rows: ${REDO_LOG_PRINT_BATCH_MAX_ROWS:300}
 
 # LogMiner 세션 시작과 조회 대상 테이블 설정
 logminer:
@@ -23,7 +23,7 @@ logminer:
   committed-data-only: ${LOGMINER_COMMITTED_DATA_ONLY:true}
   max-scan-scn-range: ${LOGMINER_MAX_SCAN_SCN_RANGE:0}
   # current_scn 직전 안정 구간까지만 스캔하기 위한 SCN 여유폭
-  end-scn-safety-margin: ${LOGMINER_END_SCN_SAFETY_MARGIN:1000}
+  end-scn-safety-margin: ${LOGMINER_END_SCN_SAFETY_MARGIN:0}
   transaction-diagnostics:
     enabled: ${LOGMINER_TRANSACTION_DIAGNOSTICS_ENABLED:false}
     max-logs: ${LOGMINER_TRANSACTION_DIAGNOSTICS_MAX_LOGS:20}
@@ -31,11 +31,21 @@ logminer:
     log-all-controls: ${LOGMINER_TRANSACTION_DIAGNOSTICS_LOG_ALL_CONTROLS:false}
   targets:
     - P_USERS
+    - P_POST
 
 # redo log entry 발행 topic 설정
 cdc:
   kafka:
     topic: ${CDC_KAFKA_TOPIC:cdc-log-entries}
+  # 연관 테이블을 같은 Kafka partition으로 보내기 위한 aggregate routing rule
+  routing:
+    tables:
+      - table-name: P_USERS
+        aggregate-name: USER
+        aggregate-key-column: ID
+      - table-name: P_POST
+        aggregate-name: USER
+        aggregate-key-column: USER_ID
 
 # Actuator와 Prometheus 수집 endpoint 노출 설정
 management:
