@@ -40,10 +40,12 @@ public class RedoSqlParser {
 		}
 
 		String quotedColumn = Pattern.quote(keyColumn);
-		Pattern wherePattern = Pattern.compile("(?i)\\bwhere\\b.*?\\b" + quotedColumn + "\\b\\s*=\\s*(\\d+)");
+		Pattern wherePattern = Pattern.compile("(?is)\\bwhere\\b.*?\"?" + quotedColumn + "\"?\\s*=\\s*(\\d+)");
+		Pattern assignmentPattern = Pattern.compile("(?is)\"?" + quotedColumn + "\"?\\s*=\\s*(\\d+)");
 		Pattern insertPattern = Pattern.compile("(?i)\\b" + quotedColumn + "\\b\\s*,.*?\\bvalues\\s*\\(\\s*(\\d+)");
 
 		return findLong(wherePattern, sqlRedo)
+				.or(() -> findLong(assignmentPattern, sqlRedo))
 				.or(() -> findLong(insertPattern, sqlRedo));
 	}
 
@@ -200,6 +202,7 @@ public class RedoSqlParser {
 	private Map<String, Object> parseUpdateValues(String sqlRedo) {
 		Matcher matcher = Pattern.compile("(?is)\\bset\\b(.*?)\\bwhere\\b").matcher(sqlRedo);
 		if (!matcher.find()) {
+			log.warn("[REDO-SQL-PARSER][UPDATE] SET clause was not found. sqlRedo={}", abbreviate(sqlRedo));
 			return Map.of();
 		}
 

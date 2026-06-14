@@ -51,9 +51,14 @@ public class ValidationService {
 	}
 
 	private CheckResult checkRow(RedoEntry entry, SourceTableMapping mapping, String operation) {
-		return findKey(mapping, entry.rowId(), operation)
-				.map(keyValue -> CheckResult.valid(true, keyValue))
-				.orElseGet(() -> CheckResult.invalid("%s was not found by ROWID".formatted(mapping.keyColumn())));
+		java.util.Optional<Long> rowKey = findKey(mapping, entry.rowId(), operation);
+		if (rowKey.isPresent()) {
+			return CheckResult.valid(true, rowKey.get());
+		}
+
+		return extractKey(entry, mapping)
+				.map(keyValue -> CheckResult.valid(false, keyValue))
+				.orElseGet(() -> CheckResult.invalid("%s was not found by ROWID or sqlRedo".formatted(mapping.keyColumn())));
 	}
 
 	public RowPayload payload(RedoEntry entry, CheckResult checkResult) {
@@ -82,6 +87,11 @@ public class ValidationService {
 				TransformerMetrics.Tags.OPERATION, operation)
 				.increment();
 		return keyValue;
+	}
+
+	// ROWID 조회 실패 시 DELETE처럼 원본 row가 사라진 이벤트의 key를 sqlRedo에서 보완
+	private java.util.Optional<Long> extractKey(RedoEntry entry, SourceTableMapping mapping) {
+		return redoSqlParser.extractKey(entry.sqlRedo(), mapping.keyColumn());
 	}
 
 }

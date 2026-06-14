@@ -14,6 +14,12 @@ cdc:
     input-topic: ${CDC_KAFKA_INPUT_TOPIC:cdc-log-entries}
     output-topic: ${CDC_KAFKA_OUTPUT_TOPIC:cdc-transform-events}
     dlq-topic: ${CDC_KAFKA_DLQ_TOPIC:cdc-transformer-dlq}
+  # 일시 장애를 위한 bounded retry 정책
+  retry:
+    max-attempts: ${CDC_RETRY_MAX_ATTEMPTS:3}
+    initial-interval-ms: ${CDC_RETRY_INITIAL_INTERVAL_MS:1000}
+    multiplier: ${CDC_RETRY_MULTIPLIER:2.0}
+    max-interval-ms: ${CDC_RETRY_MAX_INTERVAL_MS:10000}
   # CDC 변환 대상 Oracle source table 매핑
   source:
     tables:
@@ -23,6 +29,16 @@ cdc:
         insert-columns:
           - NAME
           - EMAIL
+          - STATUS
+          - CREATED_AT
+          - UPDATED_AT
+      - owner: DATA_GENERATOR
+        table-name: P_POST
+        key-column: ID
+        insert-columns:
+          - USER_ID
+          - TITLE
+          - CONTENT
           - STATUS
           - CREATED_AT
           - UPDATED_AT

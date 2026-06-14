@@ -33,8 +33,8 @@ public class TransformProducer {
 		this.outputTopic = outputTopic;
 	}
 
-	public void publish(TransformEvent event) throws Exception {
-		String key = createKey(event);
+	public void publish(String routingKey, TransformEvent event) throws Exception {
+		String key = routingKey == null || routingKey.isBlank() ? createKey(event) : routingKey;
 		String payload = objectMapper.writeValueAsString(event);
 		kafkaTemplate.send(outputTopic, key, payload)
 				.whenComplete((result, exception) -> handleResult(key, result, exception));

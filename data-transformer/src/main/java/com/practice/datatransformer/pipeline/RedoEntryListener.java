@@ -1,5 +1,6 @@
 package com.practice.datatransformer.pipeline;
 
+import java.sql.SQLException;
 import java.util.Map;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -49,7 +50,7 @@ public class RedoEntryListener {
 				return;
 			}
 
-			transformProducer.publish(event);
+			transformProducer.publish(record.key(), event);
 			log.info("[TRANSFORM][DONE] scn={}, row={}, operation={}, table={}, valid={}, rowExists={}",
 					entry.scn(),
 					entry.rowNumber(),
@@ -67,6 +68,11 @@ public class RedoEntryListener {
 					ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage());
 		}
 		catch (Exception ex) {
+			if (oracleObjectAccessFailure(ex)) {
+				publishOracleObjectAccessFailure(record, ex);
+				status = TransformerMetrics.Status.DLQ;
+				return;
+			}
 			status = TransformerMetrics.Status.FAILED;
 			log.error("[TRANSFORM][FAILED] topic={}, partition={}, offset={}, message={}",
 					record.topic(),
@@ -87,6 +93,53 @@ public class RedoEntryListener {
 					.tag(TransformerMetrics.Tags.STATUS, status)
 					.register(meterRegistry));
 		}
+	}
+
+	// Oracle 객체/권한 오류는 재시도 없이 DLQ로 분리
+	private void publishOracleObjectAccessFailure(ConsumerRecord<String, String> record, Exception ex) throws Exception {
+		Throwable root = rootCause(ex);
+		FailureEvent failureEvent = FailureEvent.of(
+				FailureType.ORACLE_OBJECT_ACCESS_FAILED,
+				false,
+				"Oracle 객체 또는 권한 문제로 source row 조회에 실패했습니다",
+				record.topic(),
+				record.partition(),
+				record.offset(),
+				record.value(),
+				Map.of(
+						"exceptionType", root.getClass().getName(),
+						"exceptionMessage", root.getMessage() == null ? "" : root.getMessage()));
+		publishFailure(failureEvent);
+		log.warn("[TRANSFORM][DLQ] failureType={}, topic={}, partition={}, offset={}, exceptionType={}",
+				FailureType.ORACLE_OBJECT_ACCESS_FAILED,
+				record.topic(),
+				record.partition(),
+				record.offset(),
+				root.getClass().getName());
+	}
+
+	private boolean oracleObjectAccessFailure(Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof SQLException sqlException
+					&& (sqlException.getErrorCode() == 942 || sqlException.getErrorCode() == 1031)) {
+				return true;
+			}
+			String message = current.getMessage();
+			if (message != null && (message.contains("ORA-00942") || message.contains("ORA-01031"))) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
+	}
+
+	private Throwable rootCause(Throwable exception) {
+		Throwable current = exception;
+		while (current.getCause() != null) {
+			current = current.getCause();
+		}
+		return current;
 	}
 
 	// 원본 Kafka 메시지를 RedoEntry로 변환하고 역직렬화 실패는 DLQ로 분리
