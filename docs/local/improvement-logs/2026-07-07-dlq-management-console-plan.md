@@ -279,6 +279,16 @@ Request:
 - replay API 호출 후 replay topic에 originalMessage가 발행되는지 확인한다.
 - ignore/complete 상태 변경을 확인한다.
 
+검증 결과:
+
+- local profile 기동 확인: `management-console` 8084 포트 정상 기동, Oracle `LOG_SCANNER.dlq_message` 테이블 생성 확인
+- DLQ 수집 확인: `cdc-loader-dlq-local` 기존 메시지 50건을 소비해 `dlq_message`에 저장 확인
+- 조회 API 확인: `GET /api/dlq/messages?page=0&size=5`, `GET /api/dlq/messages/5` 정상 응답 확인
+- 재처리 API 확인: `POST /api/dlq/messages/5/replay` 호출 후 상태 `REPLAYED` 변경 및 `cdc-loader-replay-local`에 originalMessage 발행 확인
+- 무시 API 확인: `POST /api/dlq/messages/1/ignore` 호출 후 상태 `IGNORED` 변경 확인
+- 완료 API 확인: `POST /api/dlq/messages/2/complete` 호출 후 상태 `COMPLETED` 변경 확인
+- 검증 중 발견한 빈 필터 목록 조회 500 오류를 `Specification` 조건 조합 방식 수정으로 해결
+
 ## Open Decisions
 
 - replay topic을 stage별로 분리할지 여부
