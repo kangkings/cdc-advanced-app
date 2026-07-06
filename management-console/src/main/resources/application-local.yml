@@ -36,6 +36,8 @@ spring:
         linger.ms: 20
         batch.size: 32768
         compression.type: lz4
+    listener:
+      ack-mode: manual
 
 cdc:
   # local DLQ 수집과 replay 발행 topic 설정
