@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.practice.managementconsole.dlq.application.DlqMessageQueryService;
 import com.practice.managementconsole.dlq.application.DlqMessageReplayService;
 import com.practice.managementconsole.dlq.application.DlqMessageSearchCondition;
+import com.practice.managementconsole.dlq.application.DlqMessageStatusService;
 import com.practice.managementconsole.dlq.domain.DlqMessageStatus;
 
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class DlqMessageController {
 
 	private final DlqMessageQueryService dlqMessageQueryService;
 	private final DlqMessageReplayService dlqMessageReplayService;
+	private final DlqMessageStatusService dlqMessageStatusService;
 
 	// DLQ 메시지 목록 조회
 	@GetMapping
@@ -64,6 +66,22 @@ public class DlqMessageController {
 		String replayTopic = request == null ? null : request.replayTopic();
 		String memo = request == null ? null : request.memo();
 		return DlqMessageDetailResponse.from(dlqMessageReplayService.replay(id, replayTopic, memo));
+	}
+
+	// DLQ 메시지 무시 처리
+	@PostMapping("/{id}/ignore")
+	public DlqMessageDetailResponse ignore(
+			@PathVariable Long id,
+			@RequestBody DlqMessageIgnoreRequest request) {
+		return DlqMessageDetailResponse.from(dlqMessageStatusService.ignore(id, request.reason()));
+	}
+
+	// DLQ 메시지 완료 처리
+	@PostMapping("/{id}/complete")
+	public DlqMessageDetailResponse complete(
+			@PathVariable Long id,
+			@RequestBody DlqMessageCompleteRequest request) {
+		return DlqMessageDetailResponse.from(dlqMessageStatusService.complete(id, request.memo()));
 	}
 
 }
