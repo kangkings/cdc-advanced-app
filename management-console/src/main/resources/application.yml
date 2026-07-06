@@ -1,0 +1,27 @@
+server:
+  # management-console HTTP/actuator port
+  port: 8084
+
+spring:
+  # 애플리케이션 식별과 기본 실행 profile 설정
+  application:
+    name: management-console
+  profiles:
+    active: local
+
+cdc:
+  # DLQ 수집과 replay 발행 topic 설정
+  kafka:
+    loader-dlq-topic: ${CDC_LOADER_DLQ_TOPIC:cdc-loader-dlq}
+    transformer-dlq-topic: ${CDC_TRANSFORMER_DLQ_TOPIC:cdc-transformer-dlq}
+    replay-topic: ${CDC_REPLAY_TOPIC:cdc-loader-replay}
+
+# Actuator와 Prometheus 수집 endpoint 노출 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always

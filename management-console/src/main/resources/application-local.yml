@@ -1,0 +1,51 @@
+spring:
+  # local DLQ 저장 datasource 설정
+  datasource:
+    url: jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+    username: ${DB_USERNAME:log_scanner}
+    password: ${DB_PASSWORD:log_scanner}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      pool-name: management-console-local-hikari
+      maximum-pool-size: 5
+
+  # local JPA schema와 SQL 로그 설정
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  # local DLQ consume/replay produce Kafka 연결 설정
+  kafka:
+    bootstrap-servers: localhost:9092
+    client-id: management-console-local
+    consumer:
+      group-id: management-console-local
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      max-poll-records: 100
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        linger.ms: 20
+        batch.size: 32768
+        compression.type: lz4
+
+cdc:
+  # local DLQ 수집과 replay 발행 topic 설정
+  kafka:
+    loader-dlq-topic: ${CDC_LOADER_DLQ_TOPIC:cdc-loader-dlq-local}
+    transformer-dlq-topic: ${CDC_TRANSFORMER_DLQ_TOPIC:cdc-transformer-dlq-local}
+    replay-topic: ${CDC_REPLAY_TOPIC:cdc-loader-replay-local}
+
+logging:
+  # local 개발 확인용 로그 레벨
+  level:
+    root: INFO
+    com.practice: DEBUG
