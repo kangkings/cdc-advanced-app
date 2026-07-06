@@ -1,13 +1,23 @@
 package com.practice.managementconsole;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
 class ManagementConsoleApplicationTests {
 
 	@Test
-	void contextLoads() {
+	@DisplayName("애플리케이션_클래스확인")
+	void 애플리케이션_클래스확인() {
+		// given
+		Class<ManagementConsoleApplication> applicationClass = ManagementConsoleApplication.class;
+
+		// when
+		String simpleName = applicationClass.getSimpleName();
+
+		// then
+		assertThat(simpleName).isEqualTo("ManagementConsoleApplication");
 	}
 
 }
